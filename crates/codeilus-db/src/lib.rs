@@ -9,8 +9,8 @@ pub use batch_writer::BatchWriter;
 pub use migrations::Migrator;
 pub use pool::DbPool;
 pub use repos::{
-    CommunityRepo, CommunityRow, EdgeRepo, EdgeRow, FileRepo, FileRow, ProcessRepo, ProcessRow,
-    ProcessStepRow, SymbolRepo, SymbolRow,
+    CommunityRepo, CommunityRow, EdgeRepo, EdgeRow, FileMetricsRepo, FileMetricsRow, FileRepo,
+    FileRow, ProcessRepo, ProcessRow, ProcessStepRow, SymbolRepo, SymbolRow,
 };
 
 use std::collections::HashMap;
