@@ -1,0 +1,8 @@
+[package]
+name = "codeilus-llm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+codeilus-core = { path = "../codeilus-core" }
+tokio = { workspace = true }

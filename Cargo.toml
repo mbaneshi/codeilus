@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/codeilus-core",
+    "crates/codeilus-parse",
+    "crates/codeilus-graph",
+    "crates/codeilus-metrics",
+    "crates/codeilus-analyze",
+    "crates/codeilus-diagram",
+    "crates/codeilus-search",
+    "crates/codeilus-llm",
+    "crates/codeilus-db",
+    "crates/codeilus-api",
+    "crates/codeilus-learn",
+    "crates/codeilus-narrate",
+    "crates/codeilus-harvest",
+    "crates/codeilus-export",
+    "crates/codeilus-mcp",
+    "crates/codeilus-app",
+]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros", "signal", "process", "io-util"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+axum = { version = "0.7", features = ["json", "ws", "macros"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+rust-embed = { version = "8", features = ["mime-guess"] }
+mime_guess = "2"
+http = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+crossbeam-channel = "0.5"
+clap = { version = "4", features = ["derive"] }
+tokio-util = { version = "0.7", features = ["rt"] }

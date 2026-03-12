@@ -1,16 +1,19 @@
 //! Tree-sitter multi-language parsing and symbol extraction.
 
+mod extractor;
 mod language;
 mod model;
-mod walker;
 mod parser;
+pub mod queries;
+pub mod resolver;
+mod walker;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use codeilus_core::{CodeilusError, CodeilusEvent, EventBus};
 
-pub use language::detect_language;
-pub use model::{ParsedFile, Symbol, Import, Call, Heritage};
+pub use language::{create_parser, detect_language};
+pub use model::{Call, Heritage, Import, ParsedFile, Symbol};
 
 /// Configuration for repository parsing.
 pub struct ParseConfig {
@@ -31,7 +34,7 @@ impl ParseConfig {
 
 /// Parse an entire repository into `ParsedFile` records.
 ///
-/// If an `EventBus` is provided, emits `ParsingProgress` events as files are parsed.
+/// If an `EventBus` is provided, emits progress events as files are parsed.
 pub fn parse_repository(
     config: &ParseConfig,
     bus: Option<&EventBus>,
@@ -41,6 +44,11 @@ pub fn parse_repository(
     let files = walker::walk_files(&config.root, config.follow_symlinks, config.max_file_bytes)?;
     let total = files.len();
 
+    if let Some(bus) = bus {
+        let path = config.root.to_string_lossy().to_string();
+        bus.publish(CodeilusEvent::AnalysisStarted { path });
+    }
+
     let parsed_files: Vec<ParsedFile> = files
         .par_iter()
         .filter_map(|path| {
@@ -49,11 +57,6 @@ pub fn parse_repository(
             parser::parse_file(path.as_path(), lang, &source).ok()
         })
         .collect();
-
-    if let Some(bus) = bus {
-        let path = config.root.to_string_lossy().to_string();
-        bus.publish(CodeilusEvent::AnalysisStarted { path });
-    }
 
     if let Some(bus) = bus {
         for (idx, _) in parsed_files.iter().enumerate() {
@@ -72,4 +75,3 @@ pub fn parse_repository(
 
     Ok(parsed_files)
 }
-

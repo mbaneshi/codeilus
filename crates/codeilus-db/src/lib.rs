@@ -8,13 +8,14 @@ pub mod repos;
 pub use batch_writer::BatchWriter;
 pub use migrations::Migrator;
 pub use pool::DbPool;
+pub use repos::{EdgeRepo, EdgeRow, FileRepo, FileRow, SymbolRepo, SymbolRow};
 
 use std::collections::HashMap;
 
 use codeilus_core::CodeilusError;
 use codeilus_parse::ParsedFile;
-use repos::files::{FileRepo, NewFile};
-use repos::symbols::{NewSymbol, SymbolRepo};
+use repos::files::NewFile;
+use repos::symbols::NewSymbol;
 
 impl DbPool {
     /// Persist a collection of parsed files into the database.
@@ -27,8 +28,8 @@ impl DbPool {
             .transaction()
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
 
-        let file_repo = FileRepo;
-        let symbol_repo = SymbolRepo;
+        let file_repo = repos::files::FileRepo;
+        let symbol_repo = repos::symbols::SymbolRepo;
 
         // Insert files.
         let new_files: Vec<NewFile> = parsed

@@ -1,0 +1,18 @@
+[package]
+name = "codeilus-app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "codeilus"
+path = "src/main.rs"
+
+[dependencies]
+codeilus-core = { path = "../codeilus-core" }
+codeilus-db = { path = "../codeilus-db" }
+codeilus-api = { path = "../codeilus-api" }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio-util = { workspace = true }

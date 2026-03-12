@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+:root {
+  --accent: #6366f1;  /* indigo-500 */
+}
+
+body {
+  @apply bg-gray-950 text-gray-100 font-mono;
+}

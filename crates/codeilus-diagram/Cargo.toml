@@ -1,0 +1,7 @@
+[package]
+name = "codeilus-diagram"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+codeilus-core = { path = "../codeilus-core" }

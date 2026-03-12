@@ -1,70 +1,21 @@
 use std::path::Path;
 
-use codeilus_core::{CodeilusError, Language, SymbolKind};
+use codeilus_core::CodeilusError;
 
-use crate::model::{Call, Heritage, Import, ParsedFile, Symbol};
+use crate::extractor;
+use crate::language;
+use crate::model::ParsedFile;
 
 pub fn parse(path: &Path, source: &str) -> Result<ParsedFile, CodeilusError> {
-    let mut symbols = Vec::new();
-    let mut imports = Vec::new();
+    let mut parser = language::create_parser(codeilus_core::Language::TypeScript)?;
+    let tree = parser
+        .parse(source.as_bytes(), None)
+        .ok_or_else(|| CodeilusError::Parse("Failed to parse TypeScript file".to_string()))?;
 
-    for (idx, line) in source.lines().enumerate() {
-        let line_no = (idx + 1) as i64;
-        let trimmed = line.trim_start();
-
-        if trimmed.starts_with("function ") {
-            if let Some(name) = trimmed.split_whitespace().nth(1) {
-                let func_name = name.split('(').next().unwrap_or(name).to_string();
-                symbols.push(Symbol {
-                    name: func_name,
-                    kind: SymbolKind::Function,
-                    start_line: line_no,
-                    end_line: line_no,
-                    signature: Some(trimmed.to_string()),
-                });
-            }
-        } else if trimmed.starts_with("class ") {
-            if let Some(name) = trimmed.split_whitespace().nth(1) {
-                let cls_name = name.split('{').next().unwrap_or(name).to_string();
-                symbols.push(Symbol {
-                    name: cls_name,
-                    kind: SymbolKind::Class,
-                    start_line: line_no,
-                    end_line: line_no,
-                    signature: Some(trimmed.to_string()),
-                });
-            }
-        } else if trimmed.starts_with("interface ") {
-            if let Some(name) = trimmed.split_whitespace().nth(1) {
-                symbols.push(Symbol {
-                    name: name.to_string(),
-                    kind: SymbolKind::Interface,
-                    start_line: line_no,
-                    end_line: line_no,
-                    signature: Some(trimmed.to_string()),
-                });
-            }
-        } else if trimmed.starts_with("import ") {
-            // Rough import parser: import X from 'module';
-            if let Some(from_idx) = trimmed.find(" from ") {
-                let names_part = &trimmed["import ".len()..from_idx];
-                let module_part = &trimmed[from_idx + " from ".len()..];
-                let module = module_part.trim().trim_matches(|c| c == '"' || c == '\'');
-                imports.push(Import {
-                    from: module.to_string(),
-                    name: names_part.trim().to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(ParsedFile {
-        path: path.to_path_buf(),
-        language: Language::TypeScript,
-        symbols,
-        imports,
-        calls: Vec::new(),
-        heritage: Vec::new(),
-    })
+    Ok(extractor::extract(
+        &tree,
+        source.as_bytes(),
+        codeilus_core::Language::TypeScript,
+        path,
+    ))
 }
-

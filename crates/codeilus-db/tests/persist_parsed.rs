@@ -18,6 +18,7 @@ fn persist_parsed_inserts_files_and_symbols() {
     let parsed = vec![ParsedFile {
         path: PathBuf::from("src/main.rs"),
         language: Language::Rust,
+        sloc: 3,
         symbols: vec![Symbol {
             name: "foo".to_string(),
             kind: SymbolKind::Function,

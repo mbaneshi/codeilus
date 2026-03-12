@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use codeilus_core::{Confidence, EdgeKind, Language, SymbolKind};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Symbol {
     pub name: String,
     pub kind: SymbolKind,
@@ -11,20 +12,21 @@ pub struct Symbol {
     pub signature: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Import {
     pub from: String,
     pub name: String,
+    pub line: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Call {
     pub caller: String,
     pub callee: String,
     pub line: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Heritage {
     pub child: String,
     pub parent: String,
@@ -32,10 +34,11 @@ pub struct Heritage {
     pub confidence: Confidence,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedFile {
     pub path: PathBuf,
     pub language: Language,
+    pub sloc: usize,
     pub symbols: Vec<Symbol>,
     pub imports: Vec<Import>,
     pub calls: Vec<Call>,
