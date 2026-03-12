@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use codeilus_core::ids::{FileId, SymbolId};
-use codeilus_db::{DbPool, EdgeRepo, FileRepo, Migrator, SymbolRepo};
+use codeilus_db::{CommunityRepo, DbPool, EdgeRepo, FileRepo, Migrator, ProcessRepo, SymbolRepo};
 use rusqlite::Connection;
 
 fn setup() -> Arc<Mutex<Connection>> {
@@ -287,4 +287,94 @@ fn edge_list_by_kind() {
     assert_eq!(calls.len(), 2);
     let imports = repo.list_by_kind("IMPORTS").unwrap();
     assert_eq!(imports.len(), 1);
+}
+
+// ── CommunityRepo ────────────────────────────────────────────
+
+#[test]
+fn community_repo_insert_and_list() {
+    let conn = setup();
+    let (s1, s2, _s3) = insert_test_symbols(&conn);
+    let repo = CommunityRepo::new(conn);
+
+    // Insert a community
+    let id = repo.insert("auth_cluster", 0.85).unwrap();
+    let row = repo.get(id).unwrap();
+    assert_eq!(row.label, "auth_cluster");
+    assert!((row.cohesion - 0.85).abs() < f64::EPSILON);
+
+    // Add members
+    repo.insert_member(id, s1).unwrap();
+    repo.insert_member(id, s2).unwrap();
+
+    let members = repo.list_members(id).unwrap();
+    assert_eq!(members.len(), 2);
+    assert!(members.contains(&s1));
+    assert!(members.contains(&s2));
+
+    // List all communities
+    let all = repo.list().unwrap();
+    assert_eq!(all.len(), 1);
+
+    // Batch insert
+    let batch_ids = repo
+        .insert_batch(&[
+            ("cluster_a".to_string(), 0.9),
+            ("cluster_b".to_string(), 0.7),
+        ])
+        .unwrap();
+    assert_eq!(batch_ids.len(), 2);
+
+    let all = repo.list().unwrap();
+    assert_eq!(all.len(), 3);
+
+    // Batch members
+    repo.insert_members_batch(&[(batch_ids[0], s1), (batch_ids[1], s2)])
+        .unwrap();
+    let members_a = repo.list_members(batch_ids[0]).unwrap();
+    assert_eq!(members_a.len(), 1);
+
+    // Delete all
+    repo.delete_all().unwrap();
+    let all = repo.list().unwrap();
+    assert_eq!(all.len(), 0);
+}
+
+// ── ProcessRepo ──────────────────────────────────────────────
+
+#[test]
+fn process_repo_insert_and_list_steps() {
+    let conn = setup();
+    let (s1, s2, s3) = insert_test_symbols(&conn);
+    let repo = ProcessRepo::new(conn);
+
+    // Insert process
+    let proc_id = repo.insert("main_flow", s1).unwrap();
+    let row = repo.get(proc_id).unwrap();
+    assert_eq!(row.name, "main_flow");
+    assert_eq!(row.entry_symbol_id, s1);
+
+    // Insert steps
+    repo.insert_step(proc_id, 0, s1, "entry").unwrap();
+    repo.insert_step(proc_id, 1, s2, "process").unwrap();
+    repo.insert_step(proc_id, 2, s3, "cleanup").unwrap();
+
+    // List steps (should be ordered)
+    let steps = repo.list_steps(proc_id).unwrap();
+    assert_eq!(steps.len(), 3);
+    assert_eq!(steps[0].step_order, 0);
+    assert_eq!(steps[0].symbol_id, s1);
+    assert_eq!(steps[1].step_order, 1);
+    assert_eq!(steps[1].symbol_id, s2);
+    assert_eq!(steps[2].step_order, 2);
+    assert_eq!(steps[2].symbol_id, s3);
+
+    // List all processes
+    let all = repo.list().unwrap();
+    assert_eq!(all.len(), 1);
+
+    // Delete all
+    repo.delete_all().unwrap();
+    let all = repo.list().unwrap();
+    assert_eq!(all.len(), 0);
 }

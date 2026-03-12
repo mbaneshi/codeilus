@@ -314,21 +314,66 @@ Create `crates/codeilus-graph/tests/` with test data:
 
 ## Report
 
-> **Agent: fill this section when done.**
-
-### Status: pending
+### Status: complete
 
 ### Files Created/Modified:
-<!-- list all files you created/modified -->
+
+**codeilus-graph (new files):**
+- `Cargo.toml` — Updated with petgraph, codeilus-parse, codeilus-db, serde deps
+- `src/lib.rs` — Module entry point with all public exports
+- `src/types.rs` — KnowledgeGraph, GraphNode, GraphEdge, Community, Process, ProcessStep, EntryPoint
+- `src/call_graph.rs` — Call graph construction with confidence scoring (exact=1.0, name-only=0.7, ambiguous=0.4)
+- `src/dep_graph.rs` — File-level dependency graph from import resolution
+- `src/heritage.rs` — Extends/Implements edge construction
+- `src/community.rs` — Louvain community detection with iterative modularity optimization
+- `src/entry_points.rs` — Heuristic entry point scoring (main, handler, CLI, fan-in patterns)
+- `src/process.rs` — BFS execution flow detection from entry points, depth-limited to 20
+- `src/builder.rs` — GraphBuilder orchestrator: indexes → call graph → deps → heritage → communities → entry points → processes
+- `tests/graph_tests.rs` — 13 test cases
+
+**codeilus-db (new files):**
+- `src/repos/community_repo.rs` — CommunityRepo with insert, batch insert, members, list, delete
+- `src/repos/process_repo.rs` — ProcessRepo with insert, steps, list, delete
+- `src/repos/mod.rs` — Updated to export new repos
+- `src/lib.rs` — Updated to re-export CommunityRepo, CommunityRow, ProcessRepo, ProcessRow, ProcessStepRow
+- `tests/repos.rs` — Added 2 new tests (community_repo_insert_and_list, process_repo_insert_and_list_steps)
 
 ### Tests:
-<!-- paste `cargo test -p codeilus-graph` output -->
+```
+cargo test -p codeilus-graph:
+running 13 tests
+test dep_graph_from_imports ... ok
+test entry_point_handler ... ok
+test entry_point_main ... ok
+test louvain_single_community ... ok
+test heritage_extends ... ok
+test heritage_implements ... ok
+test call_graph_builds_edges ... ok
+test call_graph_confidence_ambiguous ... ok
+test call_graph_confidence_exact ... ok
+test build_graph_integration ... ok
+test process_bfs_linear ... ok
+test louvain_two_clusters ... ok
+test process_bfs_depth_limit ... ok
+test result: ok. 13 passed; 0 failed
+
+cargo test -p codeilus-db:
+running 19 tests — all pass (including 2 new repo tests)
+```
 
 ### Clippy:
-<!-- paste `cargo clippy -p codeilus-graph` output -->
+```
+cargo clippy -p codeilus-graph — zero warnings
+cargo clippy -p codeilus-db — zero warnings
+```
 
 ### Issues / Blockers:
-<!-- any problems encountered -->
+None.
 
 ### Notes:
-<!-- anything the next wave needs to know -->
+- `codeilus-graph` depends on `codeilus-parse` for `ParsedFile` types (in addition to core + db)
+- GraphBuilder assigns synthetic SymbolId/FileId values (sequential from 1) — when integrating with DB, callers should use DB-assigned IDs instead
+- Louvain community detection works on the undirected projection of the directed graph
+- Entry point scoring includes "handle" pattern (not just "handler") to match names like `handle_request`
+- BFS process detection is depth-limited to 20 and deduplicates visited nodes
+- The `process_steps` table doesn't have a `description` column (per migration schema) — ProcessRepo.insert_step accepts but ignores description param

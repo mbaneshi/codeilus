@@ -8,7 +8,10 @@ pub mod repos;
 pub use batch_writer::BatchWriter;
 pub use migrations::Migrator;
 pub use pool::DbPool;
-pub use repos::{EdgeRepo, EdgeRow, FileRepo, FileRow, SymbolRepo, SymbolRow};
+pub use repos::{
+    CommunityRepo, CommunityRow, EdgeRepo, EdgeRow, FileRepo, FileRow, ProcessRepo, ProcessRow,
+    ProcessStepRow, SymbolRepo, SymbolRow,
+};
 
 use std::collections::HashMap;
 

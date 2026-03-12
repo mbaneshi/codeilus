@@ -297,19 +297,46 @@ Use `axum::test::TestServer` or build the router and call with `tower::ServiceEx
 
 > **Agent: fill this section when done.**
 
-### Status: pending
+### Status: complete
 
 ### Files Created/Modified:
-<!-- list all files you created/modified -->
+- `src/routes/files.rs` — Created: list_files (with ?language filter), get_file, get_file_symbols
+- `src/routes/symbols.rs` — Created: list_symbols (with ?kind filter), get_symbol, search_symbols (prefix)
+- `src/routes/graph.rs` — Created: get_graph (nodes+edges), list_communities (with members), list_processes (with steps)
+- `src/routes/mod.rs` — Updated: registered files, symbols, graph routers
+- `Cargo.toml` — Added rusqlite workspace dependency (needed for direct DB queries in symbols/graph routes)
+- `tests/api_routes.rs` — Created: 13 integration tests
 
 ### Tests:
-<!-- paste `cargo test -p codeilus-api` output -->
+```
+running 13 tests
+test list_communities_empty ... ok
+test get_graph_empty ... ok
+test list_files_empty ... ok
+test search_symbols_prefix ... ok
+test list_symbols ... ok
+test list_files_with_data ... ok
+test list_processes_empty ... ok
+test get_symbol_by_id ... ok
+test get_file_symbols ... ok
+test get_file_not_found ... ok
+test health_returns_ok ... ok
+test list_files_language_filter ... ok
+test get_file_by_id ... ok
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
 
 ### Clippy:
-<!-- paste `cargo clippy -p codeilus-api` output -->
+Zero warnings for codeilus-api.
 
 ### Issues / Blockers:
-<!-- any problems encountered -->
+- Task spec used `{id}` Axum 0.8 path syntax, but project uses Axum 0.7 (`:id` syntax). Fixed.
+- Task spec section 4 (state.rs) had a different AppState constructor than existing code. Kept the existing AppState which includes `event_bus` field alongside `db`.
+- Task spec section 5 (error.rs) already existed with equivalent implementation. No changes needed.
 
 ### Notes:
-<!-- anything the next wave needs to know -->
+- `symbols.rs` and `graph.rs` use direct `rusqlite` queries via `state.db.connection()` for operations not covered by existing repo methods (list all symbols with kind filter, graph node assembly with community JOIN, communities with members, processes with steps).
+- File/symbol routes use the new `FileRepo`/`SymbolRepo` from `codeilus-db` via `state.db.conn_arc()`.
+- All routes are mounted under `/api/v1/` via the existing `routes::router()` → `app()` nesting.
+- Community and process endpoints query the DB directly since `CommunityRepo`/`ProcessRepo` were being created in parallel by the graph agent. If those repos stabilize, routes could be refactored to use them.
+- Axum 0.7 path param syntax (`:id`) is used — if the project upgrades to 0.8, switch to `{id}`.
