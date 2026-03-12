@@ -9,22 +9,22 @@ pub fn detect(graph: &KnowledgeGraph) -> CodeilusResult<Vec<PatternFinding>> {
     let mut findings = Vec::new();
 
     let sccs = tarjan_scc(&graph.graph);
-
     for scc in &sccs {
-        // Only report components with >1 node (actual cycles)
+        // A single-node SCC is not a cycle (unless it has a self-edge, which we ignore)
         if scc.len() <= 1 {
             continue;
         }
 
-        let names: Vec<&str> = scc
+        // Build the cycle description from node names
+        let names: Vec<String> = scc
             .iter()
-            .map(|idx| graph.graph[*idx].name.as_str())
+            .map(|idx| graph.graph[*idx].name.clone())
             .collect();
-
-        let cycle_str = format!(
-            "{} → {}",
-            names.join(" → "),
-            names.first().unwrap_or(&"?")
+        let cycle_str = names.join(" → ");
+        let message = format!(
+            "Circular: {} → {}",
+            cycle_str,
+            names.first().unwrap_or(&String::new())
         );
 
         findings.push(PatternFinding {
@@ -34,7 +34,7 @@ pub fn detect(graph: &KnowledgeGraph) -> CodeilusResult<Vec<PatternFinding>> {
             symbol_id: None,
             file_path: String::new(),
             line: None,
-            message: format!("Circular: {cycle_str}"),
+            message,
             suggestion: "Break the cycle by extracting shared types into a common module"
                 .to_string(),
         });

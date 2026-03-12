@@ -8,10 +8,10 @@ use crate::types::{PatternFinding, PatternKind, Severity};
 pub fn detect(parsed_files: &[ParsedFile]) -> CodeilusResult<Vec<PatternFinding>> {
     let mut findings = Vec::new();
 
-    for pf in parsed_files {
-        let path = pf.path.to_string_lossy().to_string();
+    for file in parsed_files {
+        let path = file.path.to_string_lossy().to_string();
 
-        for sym in &pf.symbols {
+        for sym in &file.symbols {
             if sym.kind != SymbolKind::Function && sym.kind != SymbolKind::Method {
                 continue;
             }

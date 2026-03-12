@@ -307,6 +307,14 @@ name = "codeilus-analyze"
 version = "0.1.0"
 dependencies = [
  "codeilus-core",
+ "codeilus-db",
+ "codeilus-graph",
+ "codeilus-parse",
+ "petgraph",
+ "regex",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -373,6 +381,12 @@ name = "codeilus-diagram"
 version = "0.1.0"
 dependencies = [
  "codeilus-core",
+ "codeilus-graph",
+ "codeilus-parse",
+ "petgraph",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -434,6 +448,7 @@ dependencies = [
  "codeilus-graph",
  "codeilus-parse",
  "git2",
+ "petgraph",
  "serde",
  "serde_json",
  "tempfile",

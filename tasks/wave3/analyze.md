@@ -252,19 +252,45 @@ Update `crates/codeilus-db/src/repos/mod.rs` to include `pattern_repo`.
 
 > **Agent: fill this section when done.**
 
-### Status: pending
+### Status: complete
 
 ### Files Created/Modified:
-<!-- list all files you created/modified -->
+- `crates/codeilus-analyze/Cargo.toml` — Updated: added codeilus-parse, codeilus-graph, codeilus-db, petgraph, regex deps
+- `crates/codeilus-analyze/src/lib.rs` — Created: module declarations, `analyze()` public API
+- `crates/codeilus-analyze/src/types.rs` — Created: Severity, PatternKind, PatternFinding types
+- `crates/codeilus-analyze/src/god_class.rs` — Created: god class detector (>20 methods)
+- `crates/codeilus-analyze/src/long_method.rs` — Created: long method detector (>50 LOC)
+- `crates/codeilus-analyze/src/circular_deps.rs` — Created: circular dependency detector via Tarjan's SCC
+- `crates/codeilus-analyze/src/security.rs` — Created: security hotspot detector with regex patterns (eval, exec, hardcoded secrets, SQL injection, command injection, XSS)
+- `crates/codeilus-analyze/src/test_gap.rs` — Created: test gap detector for files with >5 symbols missing test files
+- `crates/codeilus-analyze/tests/detectors.rs` — Created: 16 test cases
+- `crates/codeilus-db/src/repos/pattern_repo.rs` — Created: PatternRepo (insert, insert_batch, list, list_by_severity, list_by_kind, list_by_file, count_by_severity, delete_all)
+- `crates/codeilus-db/src/repos/mod.rs` — Updated: added pattern_repo module and re-exports
+- `crates/codeilus-db/src/lib.rs` — Updated: added PatternRepo, PatternRow re-exports
+- `crates/codeilus-db/tests/repos.rs` — Updated: added 2 pattern_repo test cases
 
 ### Tests:
-<!-- paste `cargo test -p codeilus-analyze` output -->
+```
+codeilus-analyze: 16 passed, 0 failed
+  god_class_detected, god_class_not_triggered, god_class_severe,
+  long_method_50_lines, long_method_100_lines, long_method_250_lines,
+  circular_dep_simple, circular_dep_three_node, circular_dep_none,
+  security_eval, security_hardcoded_secret, security_sql_injection, security_clean_file,
+  test_gap_missing, test_gap_covered, analyze_integration
+
+codeilus-db: 21 passed (including 2 new pattern_repo tests)
+  pattern_repo_insert_and_list, pattern_repo_filter_by_severity
+```
 
 ### Clippy:
-<!-- paste `cargo clippy -p codeilus-analyze` output -->
+Zero warnings for codeilus-analyze.
+Zero warnings for codeilus-db.
 
 ### Issues / Blockers:
-<!-- any problems encountered -->
+- None.
 
 ### Notes:
-<!-- anything the next wave needs to know -->
+- The `security::detect()` function accepts `&[ParsedFile]` but returns empty since ParsedFile doesn't carry source content. Use `security::detect_in_content(&[(path, content)])` for actual content scanning. The `analyze()` function calls `security::detect()` — to scan content, call `security::detect_in_content()` separately.
+- The `patterns` DB table has columns: id, kind, severity, file_id, symbol_id, description. The `PatternFinding` struct (in the analyze crate) has richer fields (file_path, line, message, suggestion) — callers should map these to `PatternRow` when persisting to the DB (combining message + suggestion into description).
+- Circular dependency detection uses Tarjan's SCC algorithm from petgraph, reporting SCCs with >1 node.
+- Test gap detection generates candidate test file paths for Python (.py), TypeScript/JS (.test.ts/.spec.ts), Go (_test.go), and Rust (tests/ dir).

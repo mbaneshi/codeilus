@@ -256,21 +256,56 @@ pub fn validate_mermaid(mermaid: &str) -> ValidationResult {
 
 ## Report
 
-> **Agent: fill this section when done.**
+> **Agent: filled on 2026-03-13.**
 
-### Status: pending
+### Status: complete
 
 ### Files Created/Modified:
-<!-- list all files you created/modified -->
+- `crates/codeilus-diagram/Cargo.toml` — added dependencies: codeilus-graph, codeilus-parse, petgraph, tracing, serde, serde_json
+- `crates/codeilus-diagram/src/lib.rs` — module entry point with 4 public functions
+- `crates/codeilus-diagram/src/types.rs` — FlowchartIR, FlowNode, FlowNodeKind, FlowEdge, TreeStyle, ValidationResult
+- `crates/codeilus-diagram/src/architecture.rs` — communities → Mermaid `graph TD` with subgraphs, inter-community dashed edges, 50-node limit
+- `crates/codeilus-diagram/src/flowchart.rs` — heuristic line-by-line source analysis → FlowchartIR → Mermaid `flowchart TD`
+- `crates/codeilus-diagram/src/file_tree.rs` — ASCII file tree in 4 styles (Default, Compact, Extended, Minimal), dirs-first sorting
+- `crates/codeilus-diagram/src/mermaid.rs` — validate(), escape_label(), sanitize_node_id()
 
 ### Tests:
-<!-- paste `cargo test -p codeilus-diagram` output -->
+```
+running 19 tests
+test architecture::tests::architecture_label_escaping ... ok
+test architecture::tests::architecture_inter_community_edges ... ok
+test architecture::tests::architecture_two_communities ... ok
+test architecture::tests::architecture_node_limit ... ok
+test file_tree::tests::file_tree_default_style ... ok
+test file_tree::tests::file_tree_compact_style ... ok
+test file_tree::tests::file_tree_dirs_first ... ok
+test file_tree::tests::file_tree_nested_dirs ... ok
+test file_tree::tests::file_tree_minimal_style ... ok
+test flowchart::tests::flowchart_simple_function ... ok
+test flowchart::tests::flowchart_if_else ... ok
+test flowchart::tests::flowchart_for_loop ... ok
+test flowchart::tests::flowchart_nested ... ok
+test mermaid::tests::mermaid_valid ... ok
+test mermaid::tests::mermaid_unbalanced_brackets ... ok
+test mermaid::tests::mermaid_escape_label ... ok
+test mermaid::tests::mermaid_sanitize_id ... ok
+test mermaid::tests::escape_long_label ... ok
+test mermaid::tests::escape_newlines ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
 
 ### Clippy:
-<!-- paste `cargo clippy -p codeilus-diagram` output -->
+```
+Finished `dev` profile [unoptimized + debuginfo] target(s) — zero warnings
+```
 
 ### Issues / Blockers:
-<!-- any problems encountered -->
+- Task spec referenced `ExtractedSymbol` but the parse crate exports `Symbol` — adapted the public API to use `codeilus_parse::Symbol` instead.
+- Task spec referenced `crates/codeilus-parse/src/types.rs` but actual file is `src/model.rs`.
 
 ### Notes:
-<!-- anything the next wave needs to know -->
+- The flowchart generator uses heuristic line-by-line analysis (not full AST parsing). It detects `if`/`match`/`switch` as Decision nodes, `for`/`while`/`loop` as Loop nodes, and `return` as Exit nodes. This works well for simple functions but may miss complex patterns (nested closures, early returns inside match arms). A future wave could enhance this with proper tree-sitter AST traversal.
+- The architecture diagram limits output to top 50 nodes by fan-in score to prevent oversized Mermaid diagrams.
+- `generate_flowchart()` returns Mermaid syntax directly. The IR is also accessible via `flowchart::generate()` + `flowchart::ir_to_mermaid()` for callers that need the intermediate representation.
+- The LLM-enhanced diagram pipeline (3-stage: analyze → generate → validate/fix) is not implemented yet — that's for a later wave when `codeilus-llm` is available.

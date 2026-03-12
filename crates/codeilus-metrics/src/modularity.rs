@@ -1,77 +1,90 @@
-use std::collections::HashMap;
-
 use codeilus_core::ids::CommunityId;
 use codeilus_graph::KnowledgeGraph;
-use petgraph::visit::EdgeRef;
+use std::collections::{HashMap, HashSet};
 
-/// Per-community modularity contribution.
-pub struct ModularityResult {
-    pub global_q: f64,
-    pub per_community: HashMap<CommunityId, f64>,
-}
-
-/// Compute Louvain modularity Q-score from community assignments.
+/// Compute Louvain modularity Q-score from the knowledge graph.
 ///
-/// Q = (1/2m) * Σ [A_ij - (k_i * k_j)/(2m)] * δ(c_i, c_j)
-pub fn compute_modularity(graph: &KnowledgeGraph) -> ModularityResult {
-    let m = graph.graph.edge_count() as f64;
+/// Uses undirected projection: Q = (1/2m) * Σ [A_ij - (k_i * k_j)/(2m)] * δ(c_i, c_j)
+pub fn compute_modularity(graph: &KnowledgeGraph) -> (f64, HashMap<CommunityId, f64>) {
+    let g = &graph.graph;
 
-    if m == 0.0 {
-        return ModularityResult {
-            global_q: 0.0,
-            per_community: HashMap::new(),
-        };
+    if g.edge_count() == 0 {
+        let per_community: HashMap<CommunityId, f64> = graph
+            .communities
+            .iter()
+            .map(|c| (c.id, 0.0))
+            .collect();
+        return (0.0, per_community);
     }
 
-    // Build community assignment map
-    let mut node_community: HashMap<petgraph::graph::NodeIndex, CommunityId> = HashMap::new();
-    for idx in graph.graph.node_indices() {
-        if let Some(cid) = graph.graph[idx].community_id {
-            node_community.insert(idx, cid);
+    // Build undirected adjacency: count unique undirected edges
+    let mut undirected_edges: HashSet<(usize, usize)> = HashSet::new();
+    for edge_idx in g.edge_indices() {
+        if let Some((src, tgt)) = g.edge_endpoints(edge_idx) {
+            let a = src.index().min(tgt.index());
+            let b = src.index().max(tgt.index());
+            undirected_edges.insert((a, b));
         }
     }
 
-    // Compute degree for each node (total edges, both directions)
+    let m = undirected_edges.len() as f64;
+    let two_m = 2.0 * m;
+
+    // Compute undirected degree for each node
     let mut degrees: HashMap<petgraph::graph::NodeIndex, f64> = HashMap::new();
-    for edge in graph.graph.edge_references() {
-        *degrees.entry(edge.source()).or_default() += 1.0;
-        *degrees.entry(edge.target()).or_default() += 1.0;
+    for idx in g.node_indices() {
+        degrees.insert(idx, 0.0);
+    }
+    for &(a, b) in &undirected_edges {
+        let idx_a = petgraph::graph::NodeIndex::new(a);
+        let idx_b = petgraph::graph::NodeIndex::new(b);
+        *degrees.entry(idx_a).or_default() += 1.0;
+        *degrees.entry(idx_b).or_default() += 1.0;
     }
 
-    let two_m = 2.0 * m;
+    // Build undirected adjacency check
+    let adj = &undirected_edges;
+
     let mut global_q = 0.0;
     let mut per_community: HashMap<CommunityId, f64> = HashMap::new();
 
-    // For each edge, compute modularity contribution
-    for edge in graph.graph.edge_references() {
-        let i = edge.source();
-        let j = edge.target();
+    for community in &graph.communities {
+        let mut community_q = 0.0;
 
-        let ci = node_community.get(&i);
-        let cj = node_community.get(&j);
+        for &member_i in &community.members {
+            for &member_j in &community.members {
+                let idx_i = match graph.node_index.get(&member_i) {
+                    Some(idx) => *idx,
+                    None => continue,
+                };
+                let idx_j = match graph.node_index.get(&member_j) {
+                    Some(idx) => *idx,
+                    None => continue,
+                };
 
-        if ci.is_some() && ci == cj {
-            let ki = degrees.get(&i).copied().unwrap_or(0.0);
-            let kj = degrees.get(&j).copied().unwrap_or(0.0);
+                let a = idx_i.index().min(idx_j.index());
+                let b = idx_i.index().max(idx_j.index());
 
-            let contribution = 1.0 - (ki * kj) / two_m;
-            global_q += contribution;
+                // A_ij: undirected adjacency
+                let a_ij = if idx_i == idx_j {
+                    0.0 // no self-loops in modularity
+                } else if adj.contains(&(a, b)) {
+                    1.0
+                } else {
+                    0.0
+                };
 
-            if let Some(&cid) = ci {
-                *per_community.entry(cid).or_default() += contribution;
+                let k_i = degrees.get(&idx_i).copied().unwrap_or(0.0);
+                let k_j = degrees.get(&idx_j).copied().unwrap_or(0.0);
+
+                community_q += a_ij - (k_i * k_j) / two_m;
             }
         }
+
+        community_q /= two_m;
+        per_community.insert(community.id, community_q);
+        global_q += community_q;
     }
 
-    global_q /= two_m;
-
-    // Normalize per-community
-    for val in per_community.values_mut() {
-        *val /= two_m;
-    }
-
-    ModularityResult {
-        global_q,
-        per_community,
-    }
+    (global_q, per_community)
 }

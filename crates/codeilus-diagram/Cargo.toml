@@ -5,3 +5,9 @@ edition = "2021"
 
 [dependencies]
 codeilus-core = { path = "../codeilus-core" }
+codeilus-graph = { path = "../codeilus-graph" }
+codeilus-parse = { path = "../codeilus-parse" }
+petgraph = "0.6"
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

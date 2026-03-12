@@ -17,3 +17,5 @@ pub use edge_repo::{EdgeRepo, EdgeRow};
 pub use community_repo::{CommunityRepo, CommunityRow};
 pub use process_repo::{ProcessRepo, ProcessRow, ProcessStepRow};
 pub use file_metrics_repo::{FileMetricsRepo, FileMetricsRow};
+pub mod pattern_repo;
+pub use pattern_repo::{PatternRepo, PatternRow};

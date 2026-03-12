@@ -1,7 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use codeilus_core::ids::{FileId, SymbolId};
-use codeilus_db::{CommunityRepo, DbPool, EdgeRepo, FileRepo, Migrator, ProcessRepo, SymbolRepo};
+use codeilus_db::{
+    CommunityRepo, DbPool, EdgeRepo, FileMetricsRepo, FileRepo, Migrator, PatternRepo,
+    PatternRow, ProcessRepo, SymbolRepo,
+};
 use rusqlite::Connection;
 
 fn setup() -> Arc<Mutex<Connection>> {
@@ -343,6 +346,103 @@ fn community_repo_insert_and_list() {
 // ── ProcessRepo ──────────────────────────────────────────────
 
 #[test]
+fn pattern_repo_insert_and_list() {
+    let conn = setup();
+    let repo = PatternRepo::new(conn);
+
+    let row = PatternRow {
+        id: 0,
+        kind: "god_class".to_string(),
+        severity: "warning".to_string(),
+        file_id: None,
+        symbol_id: None,
+        description: "BigClass has 25 methods".to_string(),
+    };
+    let id = repo.insert(&row).unwrap();
+    assert!(id > 0);
+
+    let all = repo.list().unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].kind, "god_class");
+    assert_eq!(all[0].severity, "warning");
+
+    // Batch insert
+    let batch = vec![
+        PatternRow {
+            id: 0,
+            kind: "long_method".to_string(),
+            severity: "error".to_string(),
+            file_id: None,
+            symbol_id: None,
+            description: "huge_fn is 250 lines".to_string(),
+        },
+        PatternRow {
+            id: 0,
+            kind: "security_hotspot".to_string(),
+            severity: "error".to_string(),
+            file_id: None,
+            symbol_id: None,
+            description: "Hardcoded secret".to_string(),
+        },
+    ];
+    let ids = repo.insert_batch(&batch).unwrap();
+    assert_eq!(ids.len(), 2);
+
+    let all = repo.list().unwrap();
+    assert_eq!(all.len(), 3);
+
+    // Delete all
+    repo.delete_all().unwrap();
+    let all = repo.list().unwrap();
+    assert_eq!(all.len(), 0);
+}
+
+#[test]
+fn pattern_repo_filter_by_severity() {
+    let conn = setup();
+    let repo = PatternRepo::new(conn);
+
+    let batch = vec![
+        PatternRow {
+            id: 0,
+            kind: "god_class".to_string(),
+            severity: "warning".to_string(),
+            file_id: None,
+            symbol_id: None,
+            description: "warning finding".to_string(),
+        },
+        PatternRow {
+            id: 0,
+            kind: "long_method".to_string(),
+            severity: "error".to_string(),
+            file_id: None,
+            symbol_id: None,
+            description: "error finding 1".to_string(),
+        },
+        PatternRow {
+            id: 0,
+            kind: "security_hotspot".to_string(),
+            severity: "error".to_string(),
+            file_id: None,
+            symbol_id: None,
+            description: "error finding 2".to_string(),
+        },
+    ];
+    repo.insert_batch(&batch).unwrap();
+
+    let errors = repo.list_by_severity("error").unwrap();
+    assert_eq!(errors.len(), 2);
+
+    let warnings = repo.list_by_severity("warning").unwrap();
+    assert_eq!(warnings.len(), 1);
+
+    let counts = repo.count_by_severity().unwrap();
+    assert_eq!(counts.len(), 2);
+}
+
+// ── ProcessRepo ─────────────────────────────────────────────
+
+#[test]
 fn process_repo_insert_and_list_steps() {
     let conn = setup();
     let (s1, s2, s3) = insert_test_symbols(&conn);
@@ -377,4 +477,52 @@ fn process_repo_insert_and_list_steps() {
     repo.delete_all().unwrap();
     let all = repo.list().unwrap();
     assert_eq!(all.len(), 0);
+}
+
+// ── FileMetricsRepo ─────────────────────────────────────────
+
+#[test]
+fn file_metrics_repo_insert_and_get() {
+    let conn = setup();
+    let file_repo = FileRepo::new(Arc::clone(&conn));
+    let file_id = file_repo.insert("metrics_test.rs", Some("rust"), 100).unwrap();
+
+    let repo = FileMetricsRepo::new(conn);
+    let id = repo.insert(file_id, 100, 5.5, 20, 3, 0.8).unwrap();
+    assert!(id > 0);
+
+    let row = repo.get_by_file(file_id).unwrap();
+    assert!(row.is_some());
+    let row = row.unwrap();
+    assert_eq!(row.file_id, file_id);
+    assert_eq!(row.sloc, 100);
+    assert!((row.complexity - 5.5).abs() < f64::EPSILON);
+    assert_eq!(row.churn, 20);
+    assert_eq!(row.contributors, 3);
+}
+
+#[test]
+fn file_metrics_repo_list_hotspots() {
+    let conn = setup();
+    let file_repo = FileRepo::new(Arc::clone(&conn));
+
+    let mut file_ids = Vec::new();
+    for i in 0..5 {
+        let fid = file_repo
+            .insert(&format!("file_{i}.rs"), Some("rust"), 100)
+            .unwrap();
+        file_ids.push(fid);
+    }
+
+    let repo = FileMetricsRepo::new(conn);
+    for (i, fid) in file_ids.iter().enumerate() {
+        let complexity = (i + 1) as f64 * 10.0;
+        repo.insert(*fid, 50, complexity, 5, 2, 0.5).unwrap();
+    }
+
+    let hotspots = repo.list_hotspots(3).unwrap();
+    assert_eq!(hotspots.len(), 3);
+    assert!((hotspots[0].complexity - 50.0).abs() < f64::EPSILON);
+    assert!((hotspots[1].complexity - 40.0).abs() < f64::EPSILON);
+    assert!((hotspots[2].complexity - 30.0).abs() < f64::EPSILON);
 }

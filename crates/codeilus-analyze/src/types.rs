@@ -8,12 +8,12 @@ pub enum Severity {
     Error,
 }
 
-impl std::fmt::Display for Severity {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Severity {
+    pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Info => write!(f, "info"),
-            Self::Warning => write!(f, "warning"),
-            Self::Error => write!(f, "error"),
+            Self::Info => "info",
+            Self::Warning => "warning",
+            Self::Error => "error",
         }
     }
 }
@@ -27,14 +27,14 @@ pub enum PatternKind {
     TestGap,
 }
 
-impl std::fmt::Display for PatternKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl PatternKind {
+    pub fn as_str(&self) -> &'static str {
         match self {
-            Self::GodClass => write!(f, "god_class"),
-            Self::LongMethod => write!(f, "long_method"),
-            Self::CircularDependency => write!(f, "circular_dependency"),
-            Self::SecurityHotspot => write!(f, "security_hotspot"),
-            Self::TestGap => write!(f, "test_gap"),
+            Self::GodClass => "god_class",
+            Self::LongMethod => "long_method",
+            Self::CircularDependency => "circular_dependency",
+            Self::SecurityHotspot => "security_hotspot",
+            Self::TestGap => "test_gap",
         }
     }
 }

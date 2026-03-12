@@ -10,7 +10,8 @@ pub use migrations::Migrator;
 pub use pool::DbPool;
 pub use repos::{
     CommunityRepo, CommunityRow, EdgeRepo, EdgeRow, FileMetricsRepo, FileMetricsRow, FileRepo,
-    FileRow, ProcessRepo, ProcessRow, ProcessStepRow, SymbolRepo, SymbolRow,
+    FileRow, PatternRepo, PatternRow, ProcessRepo, ProcessRow, ProcessStepRow, SymbolRepo,
+    SymbolRow,
 };
 
 use std::collections::HashMap;

@@ -8,6 +8,7 @@ codeilus-core = { path = "../codeilus-core" }
 codeilus-parse = { path = "../codeilus-parse" }
 codeilus-graph = { path = "../codeilus-graph" }
 codeilus-db = { path = "../codeilus-db" }
+petgraph = "0.6"
 git2 = "0.19"
 tracing = { workspace = true }
 serde = { workspace = true }

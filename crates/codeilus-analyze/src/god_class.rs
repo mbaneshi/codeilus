@@ -8,19 +8,19 @@ use crate::types::{PatternFinding, PatternKind, Severity};
 pub fn detect(parsed_files: &[ParsedFile]) -> CodeilusResult<Vec<PatternFinding>> {
     let mut findings = Vec::new();
 
-    for pf in parsed_files {
-        let path = pf.path.to_string_lossy().to_string();
+    for file in parsed_files {
+        let path = file.path.to_string_lossy().to_string();
 
         // Find all class/struct symbols
-        let classes: Vec<_> = pf
+        let classes: Vec<_> = file
             .symbols
             .iter()
             .filter(|s| s.kind == SymbolKind::Class || s.kind == SymbolKind::Struct)
             .collect();
 
         for class in &classes {
-            // Count methods within the class's line range
-            let method_count = pf
+            // Count methods within this class's line range
+            let method_count = file
                 .symbols
                 .iter()
                 .filter(|s| {
@@ -48,8 +48,7 @@ pub fn detect(parsed_files: &[ParsedFile]) -> CodeilusResult<Vec<PatternFinding>
                         "'{}' has {} methods — consider splitting",
                         class.name, method_count
                     ),
-                    suggestion: "Consider splitting into smaller classes with single responsibilities"
-                        .to_string(),
+                    suggestion: "Consider splitting into smaller classes with single responsibilities".to_string(),
                 });
             }
         }
