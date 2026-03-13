@@ -327,19 +327,41 @@ Create test data by inserting into in-memory DB, then calling export functions.
 
 > **Agent: fill this section when done.**
 
-### Status: pending
+### Status: complete
 
 ### Files Created/Modified:
-<!-- list all files you created/modified -->
+- `crates/codeilus-export/Cargo.toml` — Updated: added codeilus-db, minijinja, chrono, serde, serde_json, tracing deps
+- `crates/codeilus-export/src/lib.rs` — Created: module declarations, `export_repo()` and `generate_index()` public API
+- `crates/codeilus-export/src/types.rs` — Created: ExportData, LanguageBadge, ReadingOrderEntry, EntryPointEntry, MetricsSnapshot, HotspotFile, CommunityExport, PatternExport, ExportedRepo
+- `crates/codeilus-export/src/data_loader.rs` — Created: `load_export_data()` — queries all DB repos (files, symbols, narratives, communities, patterns, metrics), builds ExportData
+- `crates/codeilus-export/src/renderer.rs` — Created: `render_html()` and `render_html_string()` — minijinja rendering with inlined JSON data
+- `crates/codeilus-export/src/template.rs` — Created: embedded REPO_TEMPLATE (include_str from export-template/) and INDEX_TEMPLATE (inline string)
+- `crates/codeilus-export/src/index.rs` — Created: `generate_index()` — card-based daily index page
+- `export-template/index.html` — Created: self-contained HTML template with dark theme, 10 sections, sticky nav, collapsible deep-dive, Mermaid init, print styles, responsive design
+- `crates/codeilus-export/tests/export.rs` — Created: 12 test cases
 
 ### Tests:
-<!-- paste `cargo test -p codeilus-export` output -->
+```
+codeilus-export: 12 passed, 0 failed
+  export_data_all_fields, export_data_empty_db, render_html_creates_file,
+  render_html_size_limit, render_html_contains_data, render_html_self_contained,
+  render_html_valid_structure, language_badges, index_page_lists_repos,
+  index_page_size, export_filename_sanitized, mermaid_inlined
+```
 
 ### Clippy:
-<!-- paste `cargo clippy -p codeilus-export` output -->
+Zero warnings for codeilus-export.
 
 ### Issues / Blockers:
-<!-- any problems encountered -->
+- `codeilus-diagram` dependency was not added because generating architecture diagrams requires a `KnowledgeGraph` (from codeilus-graph), which cannot be reconstructed from DB alone. The `architecture_mermaid` field is left empty; the pipeline should populate it before export.
+- `codeilus-narrate` dependency was not added — narratives are read from the DB via `NarrativeRepo`, so no direct dependency needed.
 
 ### Notes:
-<!-- anything the next wave needs to know -->
+- **Data loading** queries all available DB repos (FileRepo, SymbolRepo, NarrativeRepo, CommunityRepo, PatternRepo, FileMetricsRepo) and assembles ExportData.
+- **Architecture Mermaid** is empty by default — the pipeline should either store generated Mermaid in a narrative or pass it through another mechanism before calling `export_repo()`.
+- **Reading order** is parsed from the narrative text format (`N. path — reason`). If the narrate crate changes its output format, this parsing will need updating.
+- **Entry points** are empty since they're part of the KnowledgeGraph (not stored in DB). The pipeline should populate the ExportData.entry_points field if needed.
+- **File tree** is built from file paths using a simple ASCII tree renderer (not depending on codeilus-diagram to avoid pulling in codeilus-graph transitively).
+- **Mermaid.js** is loaded from CDN dynamically (not blocking), only if `.mermaid` elements exist on the page. No blocking external scripts.
+- **Index template** is embedded as a const string (not in a file) since it's small.
+- **All HTML is self-contained**: no external CSS, no blocking external scripts. Opens fully offline except for Mermaid diagrams (which need the CDN script).

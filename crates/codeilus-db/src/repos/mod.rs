@@ -25,3 +25,5 @@ pub mod chapter_repo;
 pub use chapter_repo::{ChapterRepo, ChapterRow, ChapterSectionRow};
 pub mod progress_repo;
 pub use progress_repo::{LearnerStatsRow, ProgressRepo, ProgressRow};
+pub mod harvest_repo;
+pub use harvest_repo::{HarvestRepoRepo, HarvestRepoRow};

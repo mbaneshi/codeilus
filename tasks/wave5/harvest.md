@@ -285,19 +285,44 @@ Note: Tests that actually scrape GitHub or clone repos should use `#[ignore]` an
 
 > **Agent: fill this section when done.**
 
-### Status: pending
+### Status: complete
 
 ### Files Created/Modified:
-<!-- list all files you created/modified -->
+- `crates/codeilus-harvest/Cargo.toml` — Updated: added reqwest, scraper, git2, sha2, tokio, serde, serde_json, codeilus-db deps
+- `crates/codeilus-harvest/src/lib.rs` — Created: module declarations, `harvest_trending()`, `clone_repo()` public API
+- `crates/codeilus-harvest/src/types.rs` — Created: HarvestConfig, TrendingSince, HarvestedRepo, HarvestStatus types
+- `crates/codeilus-harvest/src/scraper.rs` — Created: HTML scraper for GitHub trending (article.Box-row parsing), URL construction
+- `crates/codeilus-harvest/src/cloner.rs` — Created: CloneQueue with Semaphore for concurrent shallow clones via git subprocess
+- `crates/codeilus-harvest/src/fingerprint.rs` — Created: SHA256 fingerprinting from owner/name@commit_hash, git2-rs HEAD resolution
+- `crates/codeilus-harvest/tests/fixtures/trending.html` — Created: 5-repo HTML fixture for parser testing
+- `crates/codeilus-harvest/tests/harvest_tests.rs` — Created: 3 integration tests (config defaults, status transitions, skip logic)
+- `crates/codeilus-db/src/repos/harvest_repo.rs` — Created: HarvestRepoRepo (insert, insert_batch, get_by_fingerprint, get_by_name, list, list_by_status, list_by_date, update_status, delete_all)
+- `crates/codeilus-db/src/repos/mod.rs` — Updated: added harvest_repo module and re-exports
+- `crates/codeilus-db/src/lib.rs` — Updated: added HarvestRepoRepo, HarvestRepoRow re-exports
+- `crates/codeilus-db/tests/repos.rs` — Updated: added 3 harvest_repo test cases
 
 ### Tests:
-<!-- paste `cargo test -p codeilus-harvest` output -->
+```
+codeilus-harvest: 9 passed, 0 failed
+  fingerprint_deterministic, fingerprint_different_commits,
+  scrape_url_construction, scrape_parse_html, scrape_missing_fields,
+  clone_queue_semaphore,
+  config_defaults, harvest_status_transitions, skip_already_analyzed
+
+codeilus-db: 29 passed (including 3 new harvest_repo tests)
+  harvest_repo_insert_and_get, harvest_repo_list_by_status, harvest_repo_update_status
+```
 
 ### Clippy:
-<!-- paste `cargo clippy -p codeilus-harvest` output -->
+Zero warnings for codeilus-harvest.
+Zero warnings for codeilus-db.
 
 ### Issues / Blockers:
-<!-- any problems encountered -->
+- None.
 
 ### Notes:
-<!-- anything the next wave needs to know -->
+- The `harvested_repos` DB table (from init migration) does not have a `fingerprint` column or `total_stars` column. `get_by_fingerprint()` currently returns `None` as a compatibility shim. A future migration should add `fingerprint TEXT` and `total_stars INTEGER` columns for full DB persistence of these fields. Fingerprints are managed in-memory for now.
+- Shallow clone uses `git clone --depth=1` subprocess (not git2-rs) because git2 doesn't natively support depth-limited clones.
+- The HTML scraper is defensive: missing fields (description, language, stars) are `None` rather than errors. GitHub may change their HTML structure at any time — the parser logs warnings for unexpected formats.
+- Tests that actually scrape GitHub or clone repos should use `#[ignore]` — all current tests use fixtures and mocks.
+- `CloneQueue` uses `tokio::sync::Semaphore` for concurrency control. The semaphore is created with `max_concurrent` permits.

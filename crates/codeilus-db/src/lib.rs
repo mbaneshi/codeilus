@@ -10,9 +10,9 @@ pub use migrations::Migrator;
 pub use pool::DbPool;
 pub use repos::{
     ChapterRepo, ChapterRow, ChapterSectionRow, CommunityRepo, CommunityRow, EdgeRepo, EdgeRow,
-    FileMetricsRepo, FileMetricsRow, FileRepo, FileRow, LearnerStatsRow, NarrativeRepo,
-    NarrativeRow, PatternRepo, PatternRow, ProcessRepo, ProcessRow, ProcessStepRow, ProgressRepo,
-    ProgressRow, SymbolRepo, SymbolRow,
+    FileMetricsRepo, FileMetricsRow, FileRepo, FileRow, HarvestRepoRepo, HarvestRepoRow,
+    LearnerStatsRow, NarrativeRepo, NarrativeRow, PatternRepo, PatternRow, ProcessRepo,
+    ProcessRow, ProcessStepRow, ProgressRepo, ProgressRow, SymbolRepo, SymbolRow,
 };
 
 use std::collections::HashMap;

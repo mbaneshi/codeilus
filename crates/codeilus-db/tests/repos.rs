@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use codeilus_core::ids::{FileId, SymbolId};
 use codeilus_db::{
-    CommunityRepo, DbPool, EdgeRepo, FileMetricsRepo, FileRepo, Migrator, NarrativeRepo,
-    PatternRepo, PatternRow, ProcessRepo, SymbolRepo,
+    CommunityRepo, DbPool, EdgeRepo, FileMetricsRepo, FileRepo, HarvestRepoRepo, HarvestRepoRow,
+    Migrator, NarrativeRepo, PatternRepo, PatternRow, ProcessRepo, SymbolRepo,
 };
 use rusqlite::Connection;
 
@@ -584,4 +584,108 @@ fn narrative_repo_list_by_kind() {
 
     repo.delete_all().unwrap();
     assert_eq!(repo.list().unwrap().len(), 0);
+}
+
+// ── HarvestRepoRepo ─────────────────────────────────────────
+
+#[test]
+fn harvest_repo_insert_and_get() {
+    let conn = setup();
+    let repo = HarvestRepoRepo::new(conn);
+
+    let row = HarvestRepoRow {
+        id: 0,
+        owner: "tokio-rs".to_string(),
+        name: "tokio".to_string(),
+        description: Some("Async runtime for Rust".to_string()),
+        language: Some("Rust".to_string()),
+        stars_today: Some(120),
+        total_stars: Some(25400),
+        url: "https://github.com/tokio-rs/tokio".to_string(),
+        fingerprint: "abc123".to_string(),
+        status: "found".to_string(),
+        harvested_at: "2026-03-13".to_string(),
+    };
+
+    let id = repo.insert(&row).unwrap();
+    assert!(id > 0);
+
+    let found = repo.get_by_name("tokio-rs", "tokio").unwrap();
+    assert!(found.is_some());
+    let found = found.unwrap();
+    assert_eq!(found.owner, "tokio-rs");
+    assert_eq!(found.name, "tokio");
+    assert_eq!(found.status, "found");
+}
+
+#[test]
+fn harvest_repo_list_by_status() {
+    let conn = setup();
+    let repo = HarvestRepoRepo::new(conn);
+
+    let row1 = HarvestRepoRow {
+        id: 0,
+        owner: "owner1".to_string(),
+        name: "repo1".to_string(),
+        description: None,
+        language: None,
+        stars_today: None,
+        total_stars: None,
+        url: "https://github.com/owner1/repo1".to_string(),
+        fingerprint: String::new(),
+        status: "complete".to_string(),
+        harvested_at: "2026-03-13".to_string(),
+    };
+    let row2 = HarvestRepoRow {
+        id: 0,
+        owner: "owner2".to_string(),
+        name: "repo2".to_string(),
+        description: None,
+        language: None,
+        stars_today: None,
+        total_stars: None,
+        url: "https://github.com/owner2/repo2".to_string(),
+        fingerprint: String::new(),
+        status: "found".to_string(),
+        harvested_at: "2026-03-13".to_string(),
+    };
+
+    repo.insert(&row1).unwrap();
+    repo.insert(&row2).unwrap();
+
+    let complete = repo.list_by_status("complete").unwrap();
+    assert_eq!(complete.len(), 1);
+    assert_eq!(complete[0].owner, "owner1");
+
+    let found = repo.list_by_status("found").unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].owner, "owner2");
+}
+
+#[test]
+fn harvest_repo_update_status() {
+    let conn = setup();
+    let repo = HarvestRepoRepo::new(conn);
+
+    let row = HarvestRepoRow {
+        id: 0,
+        owner: "test".to_string(),
+        name: "repo".to_string(),
+        description: None,
+        language: None,
+        stars_today: None,
+        total_stars: None,
+        url: "https://github.com/test/repo".to_string(),
+        fingerprint: String::new(),
+        status: "found".to_string(),
+        harvested_at: "2026-03-13".to_string(),
+    };
+
+    let id = repo.insert(&row).unwrap();
+
+    // Update status
+    repo.update_status(id, "cloned").unwrap();
+
+    let updated = repo.get_by_name("test", "repo").unwrap().unwrap();
+    assert_eq!(updated.status, "cloned");
 }

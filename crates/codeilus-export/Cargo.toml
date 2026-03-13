@@ -5,3 +5,9 @@ edition = "2021"
 
 [dependencies]
 codeilus-core = { path = "../codeilus-core" }
+codeilus-db = { path = "../codeilus-db" }
+minijinja = "2"
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }
