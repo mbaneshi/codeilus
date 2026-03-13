@@ -5,4 +5,11 @@ edition = "2021"
 
 [dependencies]
 codeilus-core = { path = "../codeilus-core" }
-tokio = { workspace = true }
+codeilus-graph = { path = "../codeilus-graph" }
+tokio = { workspace = true, features = ["process", "io-util"] }
+tokio-stream = "0.1"
+futures = "0.3"
+petgraph = "0.6"
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

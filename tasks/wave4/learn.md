@@ -402,21 +402,65 @@ Update `crates/codeilus-db/src/repos/mod.rs` to include both new repos.
 
 ## Report
 
-> **Agent: fill this section when done.**
+> **Agent: filled on 2026-03-13.**
 
-### Status: pending
+### Status: complete
 
 ### Files Created/Modified:
-<!-- list all files you created/modified -->
+- `crates/codeilus-learn/Cargo.toml` — added dependencies: codeilus-db, codeilus-graph, petgraph, rusqlite, chrono, tracing, serde, serde_json
+- `crates/codeilus-learn/src/lib.rs` — module entry point, re-exports, `generate_curriculum()` public API
+- `crates/codeilus-learn/src/types.rs` — Curriculum, Chapter, Section, SectionKind, Difficulty, ProgressUpdate, LearnerStats, Badge (8 variants), Quiz, QuizQuestion, QuizQuestionKind
+- `crates/codeilus-learn/src/curriculum.rs` — topological sort of communities → ordered chapters, Chapter 0 "The Big Picture", final chapter "Putting It All Together", 6 sections per chapter, difficulty estimation, prerequisite tracking
+- `crates/codeilus-learn/src/progress.rs` — ProgressTracker with XP system (+10 section, +50 chapter bonus, +25 quiz, +5 explore, +5 question), badge detection (FirstSteps, ChapterChampion, QuizMaster, Completionist), streak tracking
+- `crates/codeilus-learn/src/quiz.rs` — Quiz generation from graph data: MultipleChoice (dependency questions), TrueFalse (call graph), ImpactAnalysis (caller analysis), 5 questions per chapter
+- `crates/codeilus-db/src/repos/chapter_repo.rs` — ChapterRepo: insert, insert_section, get, list_ordered, list_sections, delete_all
+- `crates/codeilus-db/src/repos/progress_repo.rs` — ProgressRepo: record_section, record_quiz_attempt, is_section_complete, get_chapter_progress, get_overall_progress, get_or_create_stats, update_stats, list_completed_sections, count_quizzes_passed, insert_badge, list_badges, count_completed_chapters, count_completed_sections, is_chapter_complete, delete_all
+- `crates/codeilus-db/src/repos/mod.rs` — added chapter_repo and progress_repo modules
+- `crates/codeilus-db/src/lib.rs` — added re-exports for ChapterRepo, ChapterRow, ChapterSectionRow, ProgressRepo, ProgressRow, LearnerStatsRow
 
 ### Tests:
-<!-- paste `cargo test -p codeilus-learn` output -->
+```
+running 18 tests
+test curriculum::tests::curriculum_has_chapter_zero ... ok
+test curriculum::tests::curriculum_has_final_chapter ... ok
+test curriculum::tests::curriculum_prerequisites ... ok
+test curriculum::tests::curriculum_difficulty_from_complexity ... ok
+test curriculum::tests::curriculum_sections_complete ... ok
+test curriculum::tests::curriculum_topological_order ... ok
+test quiz::tests::quiz_correct_index_valid ... ok
+test quiz::tests::quiz_five_questions ... ok
+test quiz::tests::quiz_has_explanation ... ok
+test quiz::tests::quiz_types_varied ... ok
+test progress::tests::progress_section_xp ... ok
+test progress::tests::progress_explore_xp ... ok
+test progress::tests::progress_quiz_xp ... ok
+test progress::tests::badge_first_steps ... ok
+test progress::tests::badge_chapter_champion ... ok
+test progress::tests::progress_chapter_bonus ... ok
+test progress::tests::badge_not_duplicated ... ok
+test progress::tests::badge_quiz_master ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
 
 ### Clippy:
-<!-- paste `cargo clippy -p codeilus-learn` output -->
+```
+Finished `dev` profile [unoptimized + debuginfo] — zero warnings
+```
+
+### DB Tests:
+```
+cargo test -p codeilus-db: 27 passed, 0 failed (including existing tests)
+cargo clippy -p codeilus-db: zero warnings
+```
 
 ### Issues / Blockers:
-<!-- any problems encountered -->
+- Task spec referenced `ExtractedSymbol` in the public API but parse crate exports `Symbol` — not relevant since learn crate doesn't directly use parse types.
+- The `LearnerStatsRow` in the task spec had extra fields (nodes_visited, explanations_read, patterns_found, languages_explored) that don't exist in the DB schema (`learner_stats` table only has total_xp, streak_days, last_active). Adapted `LearnerStatsRow` to match the actual DB columns. The extra stats can be computed dynamically from other tables.
+- Quiz attempts are tracked through the progress table (marking the "quiz" section as completed) rather than the `quiz_attempts` table, since `quiz_attempts` requires a FK to `quiz_questions` which would need pre-populated questions. Future waves can enhance this.
 
 ### Notes:
-<!-- anything the next wave needs to know -->
+- The `ProgressTracker` requires chapters and sections to be persisted in the DB first (via `ChapterRepo`) before progress can be tracked. The curriculum generator creates in-memory `Chapter` objects — a pipeline step should persist them via `ChapterRepo` before progress tracking begins.
+- Badge detection currently covers: FirstSteps, ChapterChampion, QuizMaster, Completionist. GraphExplorer, DeepDiver, Polyglot, and CodeDetective require additional tracking data (node visits, explanation reads, language stats, pattern findings) that aren't in the current DB schema. These can be added when the relevant features (graph explorer, symbol explanations, multi-language support, pattern viewer) are implemented.
+- The topological sort uses Kahn's algorithm with entry-point priority. Communities with entry points are processed first within each topological level.
+- Quiz generation is deterministic based on graph structure — questions are derived from actual dependency edges, call relationships, and caller analysis.

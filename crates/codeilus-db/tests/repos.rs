@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use codeilus_core::ids::{FileId, SymbolId};
 use codeilus_db::{
-    CommunityRepo, DbPool, EdgeRepo, FileMetricsRepo, FileRepo, Migrator, PatternRepo,
-    PatternRow, ProcessRepo, SymbolRepo,
+    CommunityRepo, DbPool, EdgeRepo, FileMetricsRepo, FileRepo, Migrator, NarrativeRepo,
+    PatternRepo, PatternRow, ProcessRepo, SymbolRepo,
 };
 use rusqlite::Connection;
 
@@ -525,4 +525,63 @@ fn file_metrics_repo_list_hotspots() {
     assert!((hotspots[0].complexity - 50.0).abs() < f64::EPSILON);
     assert!((hotspots[1].complexity - 40.0).abs() < f64::EPSILON);
     assert!((hotspots[2].complexity - 30.0).abs() < f64::EPSILON);
+}
+
+// ── NarrativeRepo ─────────────────────────────────────────────
+
+#[test]
+fn narrative_repo_insert_and_get() {
+    let conn = setup();
+    let repo = NarrativeRepo::new(conn);
+
+    let id = repo.insert("overview", None, "This is the overview.").unwrap();
+    assert!(id > 0);
+
+    let row = repo.get_by_kind("overview").unwrap();
+    assert!(row.is_some());
+    let row = row.unwrap();
+    assert_eq!(row.kind, "overview");
+    assert_eq!(row.content, "This is the overview.");
+}
+
+#[test]
+fn narrative_repo_get_by_kind_and_target() {
+    let conn = setup();
+    let repo = NarrativeRepo::new(conn);
+
+    repo.insert("module_summary", Some(1), "Summary for community 1")
+        .unwrap();
+    repo.insert("module_summary", Some(2), "Summary for community 2")
+        .unwrap();
+
+    let row = repo.get_by_kind_and_target("module_summary", 1).unwrap();
+    assert!(row.is_some());
+    assert_eq!(row.unwrap().content, "Summary for community 1");
+
+    let row = repo.get_by_kind_and_target("module_summary", 2).unwrap();
+    assert!(row.is_some());
+    assert_eq!(row.unwrap().content, "Summary for community 2");
+}
+
+#[test]
+fn narrative_repo_list_by_kind() {
+    let conn = setup();
+    let repo = NarrativeRepo::new(conn);
+
+    repo.insert("module_summary", Some(1), "Summary 1").unwrap();
+    repo.insert("module_summary", Some(2), "Summary 2").unwrap();
+    repo.insert("module_summary", Some(3), "Summary 3").unwrap();
+    repo.insert("overview", None, "Overview").unwrap();
+
+    let summaries = repo.list_by_kind("module_summary").unwrap();
+    assert_eq!(summaries.len(), 3);
+
+    let overviews = repo.list_by_kind("overview").unwrap();
+    assert_eq!(overviews.len(), 1);
+
+    let all = repo.list().unwrap();
+    assert_eq!(all.len(), 4);
+
+    repo.delete_all().unwrap();
+    assert_eq!(repo.list().unwrap().len(), 0);
 }

@@ -241,19 +241,47 @@ Note: Tests for actual CLI subprocess are integration tests that require `claude
 
 > **Agent: fill this section when done.**
 
-### Status: pending
+### Status: complete
 
 ### Files Created/Modified:
-<!-- list all files you created/modified -->
+- `crates/codeilus-llm/Cargo.toml` — Updated: added codeilus-graph, petgraph, tokio-stream, futures, serde, serde_json deps
+- `crates/codeilus-llm/src/lib.rs` — Created: module declarations, `is_available()`, `prompt()` public API
+- `crates/codeilus-llm/src/types.rs` — Created: LlmRequest, LlmResponse, LlmEvent, ContextFocus types
+- `crates/codeilus-llm/src/cli.rs` — Created: ClaudeCli subprocess wrapper with is_available(), prompt(), prompt_stream()
+- `crates/codeilus-llm/src/stream_parser.rs` — Created: parse_stream_line(), is_message_stop(), StreamAccumulator
+- `crates/codeilus-llm/src/context.rs` — Created: build_context() with Overview/Community/Symbol/Files focus modes
 
 ### Tests:
-<!-- paste `cargo test -p codeilus-llm` output -->
+```
+running 13 tests
+test stream_parser::tests::accumulator_basic ... ok
+test stream_parser::tests::accumulator_empty ... ok
+test context::tests::context_symbol ... ok
+test context::tests::context_community ... ok
+test context::tests::context_overview ... ok
+test stream_parser::tests::parse_message_stop ... ok
+test stream_parser::tests::parse_invalid_json ... ok
+test stream_parser::tests::parse_unknown_event ... ok
+test stream_parser::tests::parse_tool_use ... ok
+test stream_parser::tests::parse_content_delta ... ok
+test context::tests::context_overview_truncation ... ok
+test cli::tests::is_available_check ... ok
+test cli::tests::prompt_graceful_degradation ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
 
 ### Clippy:
-<!-- paste `cargo clippy -p codeilus-llm` output -->
+Zero warnings.
 
 ### Issues / Blockers:
-<!-- any problems encountered -->
+- None.
 
 ### Notes:
-<!-- anything the next wave needs to know -->
+- `is_available()` checks for `claude` binary via `which` with `command -v` fallback. No panic if not found.
+- `prompt()` returns `CodeilusError::Llm` with install instructions when CLI is unavailable.
+- `prompt_stream()` returns an `mpsc::Receiver<LlmEvent>` channel for streaming events.
+- Stream parser handles content_block_delta (text_delta), tool_use, and message_stop events. All other event types are silently ignored.
+- Context builder respects ~32K char budget (~8K tokens). Truncation adds "... (context truncated for token budget)" suffix.
+- Context `Files` focus is limited since KnowledgeGraph only has FileId (not full paths) — callers should augment with actual file content.
+- The `futures` and `tokio-stream` deps are included for downstream consumers that may need `Stream` trait; the current implementation uses mpsc channels directly.

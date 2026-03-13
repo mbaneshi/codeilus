@@ -67,7 +67,7 @@ impl FileRepo {
     pub fn get(&self, id: FileId) -> CodeilusResult<FileRow> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         conn.query_row(
-            "SELECT id, path, language, sloc, last_modified FROM files WHERE id = ?1",
+            "SELECT id, path, language, COALESCE(sloc, 0), last_modified FROM files WHERE id = ?1",
             params![id.0],
             |row| {
                 Ok(FileRow {
@@ -91,7 +91,7 @@ impl FileRepo {
     pub fn get_by_path(&self, path: &str) -> CodeilusResult<Option<FileRow>> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
-            .prepare("SELECT id, path, language, sloc, last_modified FROM files WHERE path = ?1")
+            .prepare("SELECT id, path, language, COALESCE(sloc, 0), last_modified FROM files WHERE path = ?1")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         let mut rows = stmt
             .query_map(params![path], |row| {
@@ -120,7 +120,7 @@ impl FileRepo {
             Some(lang) => {
                 let mut stmt = conn
                     .prepare(
-                        "SELECT id, path, language, sloc, last_modified FROM files WHERE language = ?1",
+                        "SELECT id, path, language, COALESCE(sloc, 0), last_modified FROM files WHERE language = ?1",
                     )
                     .map_err(|e| CodeilusError::Database(Box::new(e)))?;
                 let rows = stmt
@@ -140,7 +140,7 @@ impl FileRepo {
             }
             None => {
                 let mut stmt = conn
-                    .prepare("SELECT id, path, language, sloc, last_modified FROM files")
+                    .prepare("SELECT id, path, language, COALESCE(sloc, 0), last_modified FROM files")
                     .map_err(|e| CodeilusError::Database(Box::new(e)))?;
                 let rows = stmt
                     .query_map([], |row| {

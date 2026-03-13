@@ -86,6 +86,68 @@ async fn shutdown_signal() {
     info!("shutdown signal received");
 }
 
+async fn run_analyze(
+    path: &Path,
+    db: &Arc<DbPool>,
+    event_bus: &Arc<EventBus>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    info!(path = %path.display(), "analyzing codebase");
+
+    // 1. PARSE
+    info!("Step 1/5: Parsing repository...");
+    let config = codeilus_parse::ParseConfig::new(path.to_path_buf());
+    let parsed_files = codeilus_parse::parse_repository(&config, Some(event_bus))?;
+    info!(files = parsed_files.len(), symbols = parsed_files.iter().map(|f| f.symbols.len()).sum::<usize>(), "Parsing complete");
+
+    // 2. STORE
+    info!("Step 2/5: Storing parsed data...");
+    db.persist_parsed_files(&parsed_files)?;
+    info!("Stored files and symbols in database");
+
+    // 3. GRAPH
+    info!("Step 3/5: Building knowledge graph...");
+    let graph = codeilus_graph::GraphBuilder::new().build(&parsed_files)?;
+    info!(
+        nodes = graph.graph.node_count(),
+        edges = graph.graph.edge_count(),
+        communities = graph.communities.len(),
+        entry_points = graph.entry_points.len(),
+        processes = graph.processes.len(),
+        "Knowledge graph built"
+    );
+
+    // 4. METRICS
+    info!("Step 4/5: Computing metrics...");
+    let metrics = codeilus_metrics::compute_metrics(&parsed_files, &graph, path)?;
+    info!(
+        total_files = metrics.repo_metrics.total_files,
+        total_sloc = metrics.repo_metrics.total_sloc,
+        avg_complexity = format!("{:.1}", metrics.repo_metrics.avg_complexity),
+        modularity = format!("{:.3}", metrics.repo_metrics.modularity_q),
+        "Metrics computed"
+    );
+
+    // 5. ANALYZE
+    info!("Step 5/5: Detecting patterns...");
+    let patterns = codeilus_analyze::analyze(&parsed_files, &graph)?;
+    info!(patterns = patterns.len(), "Pattern detection complete");
+
+    // Summary
+    info!("═══════════════════════════════════════════");
+    info!("Analysis complete!");
+    info!("  Files:       {}", metrics.repo_metrics.total_files);
+    info!("  Symbols:     {}", metrics.repo_metrics.total_symbols);
+    info!("  SLOC:        {}", metrics.repo_metrics.total_sloc);
+    info!("  Communities: {}", graph.communities.len());
+    info!("  Entry points:{}", graph.entry_points.len());
+    info!("  Patterns:    {}", patterns.len());
+    info!("  Complexity:  {:.1}", metrics.repo_metrics.avg_complexity);
+    info!("  Modularity:  {:.3}", metrics.repo_metrics.modularity_q);
+    info!("═══════════════════════════════════════════");
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
@@ -147,8 +209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             serve_until_signal(addr, state, shutdown_signal()).await?;
         }
         Some(Command::Analyze { path }) => {
-            info!(path = %path.display(), "analyzing codebase (not yet implemented)");
-            // TODO: Sprint 1
+            run_analyze(&path, &db, &event_bus).await?;
         }
         Some(Command::Harvest { trending, date, languages }) => {
             info!(trending, ?date, ?languages, "harvesting (not yet implemented)");
@@ -168,9 +229,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
         None => {
             // Default: if path given, analyze + serve; otherwise just serve
-            if let Some(repo_path) = cli.path {
-                info!(path = %repo_path.display(), "analyzing codebase (not yet implemented)");
-                // TODO: Sprint 1 - analyze first, then serve
+            if let Some(ref repo_path) = cli.path {
+                run_analyze(repo_path, &db, &event_bus).await?;
             }
             let addr: SocketAddr = "127.0.0.1:4174".parse()?;
             info!(%addr, "starting codeilus server");

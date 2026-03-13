@@ -9,9 +9,10 @@ pub use batch_writer::BatchWriter;
 pub use migrations::Migrator;
 pub use pool::DbPool;
 pub use repos::{
-    CommunityRepo, CommunityRow, EdgeRepo, EdgeRow, FileMetricsRepo, FileMetricsRow, FileRepo,
-    FileRow, PatternRepo, PatternRow, ProcessRepo, ProcessRow, ProcessStepRow, SymbolRepo,
-    SymbolRow,
+    ChapterRepo, ChapterRow, ChapterSectionRow, CommunityRepo, CommunityRow, EdgeRepo, EdgeRow,
+    FileMetricsRepo, FileMetricsRow, FileRepo, FileRow, LearnerStatsRow, NarrativeRepo,
+    NarrativeRow, PatternRepo, PatternRow, ProcessRepo, ProcessRow, ProcessStepRow, ProgressRepo,
+    ProgressRow, SymbolRepo, SymbolRow,
 };
 
 use std::collections::HashMap;
@@ -41,7 +42,7 @@ impl DbPool {
             .map(|pf| NewFile {
                 path: pf.path.to_string_lossy().to_string(),
                 language: pf.language,
-                sloc: None,
+                sloc: Some(pf.sloc as i64),
                 last_modified: None,
             })
             .collect();
