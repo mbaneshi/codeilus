@@ -128,9 +128,30 @@ async fn run_analyze(
     );
 
     // 5. ANALYZE
-    info!("Step 5/5: Detecting patterns...");
+    info!("Step 5/8: Detecting patterns...");
     let patterns = codeilus_analyze::analyze(&parsed_files, &graph)?;
     info!(patterns = patterns.len(), "Pattern detection complete");
+
+    // 6. DIAGRAM
+    info!("Step 6/8: Generating diagrams...");
+    match codeilus_diagram::generate_architecture(&graph) {
+        Ok(diagram) => info!(len = diagram.len(), "Architecture diagram generated"),
+        Err(e) => tracing::warn!(error = %e, "Diagram generation failed (non-fatal)"),
+    }
+
+    // 7. NARRATE
+    info!("Step 7/8: Generating narratives...");
+    match codeilus_narrate::generate_all_narratives(&graph, &parsed_files, path).await {
+        Ok(narratives) => info!(count = narratives.len(), "Narratives generated"),
+        Err(e) => tracing::warn!(error = %e, "Narrative generation failed (non-fatal)"),
+    }
+
+    // 8. LEARN
+    info!("Step 8/8: Building curriculum...");
+    match codeilus_learn::generate_curriculum(&graph) {
+        Ok(curriculum) => info!(chapters = curriculum.chapters.len(), "Curriculum built"),
+        Err(e) => tracing::warn!(error = %e, "Curriculum generation failed (non-fatal)"),
+    }
 
     // Summary
     info!("═══════════════════════════════════════════");
@@ -212,20 +233,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             run_analyze(&path, &db, &event_bus).await?;
         }
         Some(Command::Harvest { trending, date, languages }) => {
-            info!(trending, ?date, ?languages, "harvesting (not yet implemented)");
-            // TODO: Sprint 7
+            if !trending {
+                info!("Use --trending to scrape GitHub trending repos");
+                return Ok(());
+            }
+            let clone_dir = std::env::var("CODEILUS_CLONE_DIR")
+                .unwrap_or_else(|_| "/tmp/codeilus-clones".into());
+            let config = codeilus_harvest::HarvestConfig {
+                since: codeilus_harvest::TrendingSince::Daily,
+                language: languages,
+                clone_dir: PathBuf::from(clone_dir),
+                ..Default::default()
+            };
+            info!(?date, "harvesting trending repos");
+            let repos = codeilus_harvest::harvest_trending(config).await?;
+            info!(count = repos.len(), "harvest complete");
+            for repo in &repos {
+                info!(
+                    name = %format!("{}/{}", repo.owner, repo.name),
+                    status = ?repo.status,
+                    "harvested repo"
+                );
+            }
         }
         Some(Command::Export { path, all_harvested, date, output }) => {
-            info!(?path, all_harvested, ?date, output = %output.display(), "exporting (not yet implemented)");
-            // TODO: Sprint 7
+            if let Some(ref repo_path) = path {
+                let repo_name = repo_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown");
+                std::fs::create_dir_all(&output).ok();
+                let out = codeilus_export::export_repo(repo_name, &db, &output)?;
+                info!(path = %out.display(), "exported");
+            } else if all_harvested {
+                info!(?date, output = %output.display(), "batch export (not yet implemented)");
+            } else {
+                info!("Provide a path or use --all-harvested");
+            }
         }
         Some(Command::Deploy { path, cloudflare, gh_pages }) => {
             info!(path = %path.display(), cloudflare, gh_pages, "deploying (not yet implemented)");
-            // TODO: Sprint 7
         }
         Some(Command::Mcp) => {
-            info!("MCP server (not yet implemented)");
-            // TODO: Sprint 8
+            info!("starting MCP server on stdio");
+            let db_owned = Arc::try_unwrap(db).unwrap_or_else(|_arc| {
+                DbPool::new(Path::new(&db_path)).expect("failed to open DB for MCP")
+            });
+            codeilus_mcp::start_mcp_server(db_owned).await?;
         }
         None => {
             // Default: if path given, analyze + serve; otherwise just serve
