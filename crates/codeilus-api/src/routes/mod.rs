@@ -3,6 +3,7 @@
 pub mod files;
 pub mod graph;
 pub mod health;
+pub mod search;
 pub mod symbols;
 pub mod ws;
 
@@ -16,4 +17,5 @@ pub fn router() -> Router<AppState> {
         .merge(files::router())
         .merge(symbols::router())
         .merge(graph::router())
+        .merge(search::router())
 }

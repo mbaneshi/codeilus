@@ -1,16 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { fetchHealth, fetchFiles } from '$lib/api';
+  import type { FileRow } from '$lib/types';
 
   let health = $state<string>('checking...');
+  let files = $state<FileRow[]>([]);
+  let totalFiles = $derived(files.length);
+  let totalSloc = $derived(files.reduce((sum, f) => sum + f.sloc, 0));
+  let languageCount = $derived(new Set(files.map((f) => f.language).filter(Boolean)).size);
 
   onMount(async () => {
-    try {
-      const res = await fetch('/api/v1/health');
-      const data = await res.json();
-      health = data.status;
-    } catch {
-      health = 'disconnected';
-    }
+    const [healthData, fileData] = await Promise.all([
+      fetchHealth(),
+      fetchFiles(),
+    ]);
+    health = healthData.status;
+    files = fileData;
   });
 </script>
 
@@ -39,6 +44,28 @@
     </div>
   </div>
 
+  <!-- Stats -->
+  {#if totalFiles > 0}
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="stat-badge">
+        <div class="text-xl font-bold text-indigo-400">{totalFiles}</div>
+        <div class="text-xs text-gray-500">Files</div>
+      </div>
+      <div class="stat-badge">
+        <div class="text-xl font-bold text-indigo-400">{totalSloc.toLocaleString()}</div>
+        <div class="text-xs text-gray-500">SLOC</div>
+      </div>
+      <div class="stat-badge">
+        <div class="text-xl font-bold text-indigo-400">{languageCount}</div>
+        <div class="text-xs text-gray-500">Languages</div>
+      </div>
+    </div>
+  {:else if health !== 'checking...'}
+    <div class="mb-6 p-4 bg-gray-900 border border-gray-800 rounded-lg text-center">
+      <p class="text-gray-400 text-sm">Get started: run <code class="text-indigo-400 font-mono">codeilus analyze ./path</code></p>
+    </div>
+  {/if}
+
   <div class="text-sm text-gray-500">
     Server: <span class="text-indigo-400">{health}</span>
   </div>
@@ -48,5 +75,8 @@
   @reference "tailwindcss";
   .card {
     @apply block p-4 bg-gray-900 border border-gray-800 rounded-lg hover:border-indigo-500 transition-colors;
+  }
+  .stat-badge {
+    @apply p-3 bg-gray-900 border border-gray-800 rounded-lg text-center;
   }
 </style>

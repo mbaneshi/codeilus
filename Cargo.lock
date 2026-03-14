@@ -331,6 +331,7 @@ dependencies = [
  "axum",
  "codeilus-core",
  "codeilus-db",
+ "codeilus-search",
  "http",
  "mime_guess",
  "rusqlite",
@@ -551,6 +552,12 @@ name = "codeilus-search"
 version = "0.1.0"
 dependencies = [
  "codeilus-core",
+ "codeilus-db",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

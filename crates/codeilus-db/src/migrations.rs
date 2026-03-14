@@ -5,6 +5,7 @@ use rusqlite::Connection;
 use tracing::info;
 
 const MIGRATION_001: &str = include_str!("../../../migrations/0001_init.sql");
+const MIGRATION_002: &str = include_str!("../../../migrations/0002_fts5.sql");
 
 pub struct Migrator<'a> {
     conn: &'a Connection,
@@ -51,6 +52,15 @@ impl<'a> Migrator<'a> {
                 .map_err(|e| CodeilusError::Database(Box::new(e)))?;
             applied += 1;
             info!("migration 0001 applied, now at version 1");
+        }
+
+        if current < 2 {
+            info!("applying migration 0002_fts5.sql");
+            self.conn
+                .execute_batch(MIGRATION_002)
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            applied += 1;
+            info!("migration 0002 applied, now at version 2");
         }
 
         if applied == 0 {

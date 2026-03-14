@@ -1,0 +1,26 @@
+name: Daily Trending Harvest
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  harvest:
+    name: Harvest & Export
+    runs-on: ubuntu-latest
+    if: false  # DISABLED until binary is published
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download codeilus binary
+        run: echo "TODO - download release binary"
+
+      - name: Harvest trending repos
+        run: echo "codeilus harvest --trending --date $(date +%Y-%m-%d)"
+
+      - name: Export static pages
+        run: echo "codeilus export --all-harvested --date $(date +%Y-%m-%d) --output ./out/"
+
+      - name: Deploy
+        run: echo "TODO - deploy to Cloudflare Pages"
