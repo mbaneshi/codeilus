@@ -46,22 +46,20 @@ async fn serve_embedded_fallback(request: Request) -> Response {
     let path = request.uri().path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
 
-    let candidates = [
-        path.to_string(),
-        format!("{}/index.html", path),
-        format!("{}.html", path),
-        "index.html".to_string(),
-    ];
-
-    for candidate in &candidates {
-        if let Some(file) = FrontendAssets::get(candidate.as_str()) {
-            let mime = from_path(candidate.as_str()).first_or_octet_stream();
+    // Only serve exact file matches for static assets (JS, CSS, images, fonts, etc.)
+    // Never serve pre-rendered .html files — SPA client-side router handles all routes.
+    if let Some(file) = FrontendAssets::get(path) {
+        let mime = from_path(path).first_or_octet_stream();
+        let is_html = mime.type_() == mime_guess::mime::TEXT && mime.subtype() == mime_guess::mime::HTML;
+        // Only serve non-HTML static assets directly (or the root index.html)
+        if !is_html || path == "index.html" {
             if let Ok(value) = http::HeaderValue::try_from(mime.as_ref()) {
                 return ([(CONTENT_TYPE, value)], file.data.to_vec()).into_response();
             }
         }
     }
 
+    // All other routes → SPA index.html (client-side router handles routing)
     if let Some(index) = FrontendAssets::get("index.html") {
         let value = http::HeaderValue::from_static("text/html");
         return ([(CONTENT_TYPE, value)], index.data.to_vec()).into_response();

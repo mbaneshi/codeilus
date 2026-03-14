@@ -2,7 +2,11 @@
 
 use codeilus_api::{serve_until_signal, AppState};
 use codeilus_core::EventBus;
-use codeilus_db::{BatchWriter, DbPool, Migrator};
+use codeilus_core::ids::SymbolId;
+use codeilus_db::{
+    BatchWriter, ChapterRepo, CommunityRepo, DbPool, EdgeRepo, FileMetricsRepo, Migrator,
+    NarrativeRepo, PatternRepo, PatternRow, ProcessRepo,
+};
 use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -105,7 +109,7 @@ async fn run_analyze(
     info!("Stored files and symbols in database");
 
     // 3. GRAPH
-    info!("Step 3/5: Building knowledge graph...");
+    info!("Step 3/8: Building knowledge graph...");
     let graph = codeilus_graph::GraphBuilder::new().build(&parsed_files)?;
     info!(
         nodes = graph.graph.node_count(),
@@ -116,8 +120,58 @@ async fn run_analyze(
         "Knowledge graph built"
     );
 
+    // 3b. PERSIST GRAPH DATA
+    info!("Persisting graph data...");
+    {
+        // Persist edges
+        let edge_repo = EdgeRepo::new(db.conn_arc());
+        let edges: Vec<(SymbolId, SymbolId, String, f64)> = graph
+            .graph
+            .edge_indices()
+            .filter_map(|ei| {
+                let (src_idx, tgt_idx) = graph.graph.edge_endpoints(ei)?;
+                let edge = graph.graph.edge_weight(ei)?;
+                let src_node = graph.graph.node_weight(src_idx)?;
+                let tgt_node = graph.graph.node_weight(tgt_idx)?;
+                let kind_str = match edge.kind {
+                    codeilus_core::types::EdgeKind::Calls => "CALLS",
+                    codeilus_core::types::EdgeKind::Imports => "IMPORTS",
+                    codeilus_core::types::EdgeKind::Extends => "EXTENDS",
+                    codeilus_core::types::EdgeKind::Implements => "IMPLEMENTS",
+                    codeilus_core::types::EdgeKind::Contains => "CONTAINS",
+                };
+                Some((src_node.symbol_id, tgt_node.symbol_id, kind_str.to_string(), edge.confidence.0))
+            })
+            .collect();
+        if !edges.is_empty() {
+            edge_repo.insert_batch(&edges)?;
+            info!(count = edges.len(), "Edges persisted");
+        }
+
+        // Persist communities + members
+        let community_repo = CommunityRepo::new(db.conn_arc());
+        for community in &graph.communities {
+            let cid = community_repo.insert(&community.label, community.cohesion)?;
+            let members: Vec<_> = community.members.iter().map(|sid| (cid, *sid)).collect();
+            if !members.is_empty() {
+                community_repo.insert_members_batch(&members)?;
+            }
+        }
+        info!(count = graph.communities.len(), "Communities persisted");
+
+        // Persist processes + steps
+        let process_repo = ProcessRepo::new(db.conn_arc());
+        for process in &graph.processes {
+            let pid = process_repo.insert(&process.name, process.entry_symbol_id)?;
+            for step in &process.steps {
+                process_repo.insert_step(pid, step.order as i64, step.symbol_id, &step.description)?;
+            }
+        }
+        info!(count = graph.processes.len(), "Processes persisted");
+    }
+
     // 4. METRICS
-    info!("Step 4/5: Computing metrics...");
+    info!("Step 4/8: Computing metrics...");
     let metrics = codeilus_metrics::compute_metrics(&parsed_files, &graph, path)?;
     info!(
         total_files = metrics.repo_metrics.total_files,
@@ -127,10 +181,44 @@ async fn run_analyze(
         "Metrics computed"
     );
 
+    // 4b. PERSIST METRICS
+    {
+        let metrics_repo = FileMetricsRepo::new(db.conn_arc());
+        let batch: Vec<_> = metrics
+            .file_metrics
+            .iter()
+            .map(|fm| (fm.file_id, fm.sloc as i64, fm.complexity, fm.churn as i64, fm.contributors as i64, fm.heatmap_score))
+            .collect();
+        if !batch.is_empty() {
+            metrics_repo.insert_batch(&batch)?;
+            info!(count = batch.len(), "File metrics persisted");
+        }
+    }
+
     // 5. ANALYZE
     info!("Step 5/8: Detecting patterns...");
     let patterns = codeilus_analyze::analyze(&parsed_files, &graph)?;
     info!(patterns = patterns.len(), "Pattern detection complete");
+
+    // 5b. PERSIST PATTERNS
+    {
+        let pattern_repo = PatternRepo::new(db.conn_arc());
+        let rows: Vec<PatternRow> = patterns
+            .iter()
+            .map(|p| PatternRow {
+                id: 0,
+                kind: p.kind.as_str().to_string(),
+                severity: p.severity.as_str().to_string(),
+                file_id: p.file_id.map(|fid| fid.0),
+                symbol_id: p.symbol_id.map(|sid| sid.0),
+                description: p.message.clone(),
+            })
+            .collect();
+        if !rows.is_empty() {
+            pattern_repo.insert_batch(&rows)?;
+            info!(count = rows.len(), "Patterns persisted");
+        }
+    }
 
     // 6. DIAGRAM
     info!("Step 6/8: Generating diagrams...");
@@ -142,14 +230,41 @@ async fn run_analyze(
     // 7. NARRATE
     info!("Step 7/8: Generating narratives...");
     match codeilus_narrate::generate_all_narratives(&graph, &parsed_files, path).await {
-        Ok(narratives) => info!(count = narratives.len(), "Narratives generated"),
+        Ok(narratives) => {
+            // Persist narratives
+            let narrative_repo = NarrativeRepo::new(db.conn_arc());
+            let batch: Vec<(String, Option<i64>, String)> = narratives
+                .iter()
+                .map(|n| (format!("{:?}", n.kind), n.target_id, n.content.clone()))
+                .collect();
+            if !batch.is_empty() {
+                narrative_repo.insert_batch(&batch)?;
+            }
+            info!(count = narratives.len(), "Narratives generated and persisted");
+        }
         Err(e) => tracing::warn!(error = %e, "Narrative generation failed (non-fatal)"),
     }
 
     // 8. LEARN
     info!("Step 8/8: Building curriculum...");
     match codeilus_learn::generate_curriculum(&graph) {
-        Ok(curriculum) => info!(chapters = curriculum.chapters.len(), "Curriculum built"),
+        Ok(curriculum) => {
+            // Persist chapters + sections
+            let chapter_repo = ChapterRepo::new(db.conn_arc());
+            for chapter in &curriculum.chapters {
+                let cid = chapter_repo.insert(
+                    chapter.order as i64,
+                    &chapter.title,
+                    &chapter.description,
+                    chapter.community_id.map(|c| c.0),
+                    chapter.difficulty.as_str(),
+                )?;
+                for section in &chapter.sections {
+                    chapter_repo.insert_section(cid, &section.id, &section.title, section.kind.as_str())?;
+                }
+            }
+            info!(chapters = curriculum.chapters.len(), "Curriculum built and persisted");
+        }
         Err(e) => tracing::warn!(error = %e, "Curriculum generation failed (non-fatal)"),
     }
 

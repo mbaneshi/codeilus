@@ -31,14 +31,17 @@
   <!-- Sidebar -->
   <nav class="w-60 bg-gray-900 border-r border-gray-800 flex flex-col">
     <div class="p-4 border-b border-gray-800">
-      <h1 class="text-xl font-bold text-indigo-400">Codeilus</h1>
-      <p class="text-xs text-gray-500 mt-1">Learn any codebase</p>
+      <a href="/" class="block">
+        <h1 class="text-xl font-bold text-indigo-400">Codeilus</h1>
+        <p class="text-xs text-gray-500 mt-1">Learn any codebase</p>
+      </a>
     </div>
     <div class="flex-1 p-2 space-y-1">
       <a href="/" class="nav-item">Home</a>
       <a href="/learn" class="nav-item">Learn</a>
       <a href="/explore" class="nav-item">Explore</a>
       <a href="/ask" class="nav-item">Ask</a>
+      <a href="/settings" class="nav-item">Settings</a>
 
       <!-- Search -->
       <div class="mt-4 pt-3 border-t border-gray-800">

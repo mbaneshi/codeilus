@@ -1,5 +1,6 @@
 //! API route definitions.
 
+pub mod ask;
 pub mod files;
 pub mod graph;
 pub mod health;
@@ -18,4 +19,5 @@ pub fn router() -> Router<AppState> {
         .merge(symbols::router())
         .merge(graph::router())
         .merge(search::router())
+        .merge(ask::router())
 }

@@ -36,3 +36,5 @@ thiserror = "2"
 crossbeam-channel = "0.5"
 clap = { version = "4", features = ["derive"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
+tokio-stream = "0.1"

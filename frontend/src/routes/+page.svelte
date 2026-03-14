@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { fetchHealth, fetchFiles } from '$lib/api';
   import type { FileRow } from '$lib/types';
 
@@ -9,14 +8,12 @@
   let totalSloc = $derived(files.reduce((sum, f) => sum + f.sloc, 0));
   let languageCount = $derived(new Set(files.map((f) => f.language).filter(Boolean)).size);
 
-  onMount(async () => {
-    const [healthData, fileData] = await Promise.all([
-      fetchHealth(),
-      fetchFiles(),
-    ]);
-    health = healthData.status;
-    files = fileData;
-  });
+  if (typeof window !== 'undefined') {
+    Promise.all([fetchHealth(), fetchFiles()]).then(([healthData, fileData]) => {
+      health = healthData.status;
+      files = fileData;
+    });
+  }
 </script>
 
 <div class="p-8 max-w-3xl mx-auto">
@@ -44,7 +41,6 @@
     </div>
   </div>
 
-  <!-- Stats -->
   {#if totalFiles > 0}
     <div class="grid grid-cols-3 gap-4 mb-6">
       <div class="stat-badge">

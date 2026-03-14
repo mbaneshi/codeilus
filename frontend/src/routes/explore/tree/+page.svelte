@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { fetchFiles, fetchFileSymbols } from '$lib/api';
   import type { FileRow, SymbolRow } from '$lib/types';
 
@@ -85,16 +84,21 @@
     }
   }
 
-  onMount(async () => {
-    files = await fetchFiles();
-    tree = buildTree(files);
-    loading = false;
-  });
+  if (typeof window !== 'undefined') {
+    fetchFiles().then((data) => {
+      files = data;
+      tree = buildTree(data);
+      loading = false;
+    });
+  }
 </script>
 
 <div class="flex h-full">
   <div class="flex-1 p-6 overflow-auto">
-    <h1 class="text-2xl font-bold mb-4">File Tree</h1>
+    <div class="flex items-center gap-3 mb-4">
+      <a href="/explore" class="text-gray-500 hover:text-gray-300 transition-colors">&larr;</a>
+      <h1 class="text-2xl font-bold">File Tree</h1>
+    </div>
 
     {#if loading}
       <p class="text-gray-400 animate-pulse">Loading...</p>
