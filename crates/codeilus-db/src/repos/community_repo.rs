@@ -153,6 +153,29 @@ impl CommunityRepo {
         Ok(result)
     }
 
+    /// Find which community a symbol belongs to.
+    pub fn find_by_symbol(&self, symbol_id: SymbolId) -> CodeilusResult<Option<CommunityRow>> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let result = conn.query_row(
+            "SELECT c.id, c.name, c.cohesion_score FROM communities c \
+             JOIN community_members cm ON cm.community_id = c.id \
+             WHERE cm.symbol_id = ?1",
+            params![symbol_id.0],
+            |row| {
+                Ok(CommunityRow {
+                    id: CommunityId(row.get(0)?),
+                    label: row.get(1)?,
+                    cohesion: row.get(2)?,
+                })
+            },
+        );
+        match result {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(CodeilusError::Database(Box::new(e))),
+        }
+    }
+
     pub fn delete_all(&self) -> CodeilusResult<()> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         conn.execute("DELETE FROM community_members", [])
