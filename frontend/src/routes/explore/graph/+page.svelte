@@ -1,415 +1,1220 @@
 <script lang="ts">
-  import { fetchGraph, fetchCommunities } from '$lib/api';
-  import type { GraphNode, GraphEdge, Community } from '$lib/types';
+  import { fetchGraph, fetchCommunities, fetchChapters, fetchFiles } from '$lib/api';
+  import type { GraphNode, GraphEdge, Community, Chapter, FileRow } from '$lib/types';
+  import {
+    ArrowLeft, BookOpen, Code2, FileCode, Filter, GitBranch, Layers,
+    Maximize2, Minimize2, Search, X, ChevronDown, ChevronRight,
+    Circle, Square, Diamond, Triangle, Hexagon, Info,
+  } from 'lucide-svelte';
 
-  const COLORS = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316', '#a855f7', '#22d3ee', '#4ade80'];
+  const COMMUNITY_COLORS = [
+    '#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#ef4444',
+    '#8b5cf6', '#06b6d4', '#84cc16', '#f97316', '#a855f7',
+    '#22d3ee', '#4ade80', '#fb923c', '#e879f9', '#2dd4bf',
+  ];
 
-  interface SimNode {
-    node: GraphNode;
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    radius: number;
-    color: string;
-    edgeCount: number;
-  }
+  const EDGE_COLORS: Record<string, { color: string; label: string; dash?: string }> = {
+    'CALLS':      { color: '#6366f1', label: 'Calls' },
+    'IMPORTS':    { color: '#14b8a6', label: 'Imports' },
+    'EXTENDS':    { color: '#f59e0b', label: 'Extends' },
+    'IMPLEMENTS': { color: '#ec4899', label: 'Implements' },
+    'CONTAINS':   { color: '#4b5563', label: 'Contains', dash: '4,2' },
+  };
+
+  const KIND_ICONS: Record<string, { label: string; shape: string }> = {
+    'function': { label: 'Function', shape: 'circle' },
+    'method':   { label: 'Method', shape: 'circle' },
+    'class':    { label: 'Class', shape: 'diamond' },
+    'struct':   { label: 'Struct', shape: 'square' },
+    'enum':     { label: 'Enum', shape: 'hexagon' },
+    'trait':    { label: 'Trait', shape: 'triangle' },
+    'interface':{ label: 'Interface', shape: 'triangle' },
+    'impl':     { label: 'Impl', shape: 'square' },
+    'module':   { label: 'Module', shape: 'hexagon' },
+    'constant': { label: 'Constant', shape: 'square' },
+  };
 
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let allNodes = $state<GraphNode[]>([]);
   let allEdges = $state<GraphEdge[]>([]);
   let communities = $state<Community[]>([]);
+  let chapters = $state<Chapter[]>([]);
+  let files = $state<FileRow[]>([]);
   let selectedCommunity = $state<number | null>(null);
-  let maxNodes = $state(100);
-  let nodes = $state<GraphNode[]>([]);
-  let edges = $state<GraphEdge[]>([]);
-  let simNodes = $state<SimNode[]>([]);
-  let hoveredNode = $state<SimNode | null>(null);
-  let selectedNode = $state<SimNode | null>(null);
-  let mouseX = $state(0);
-  let mouseY = $state(0);
-  let svgEl: SVGSVGElement | undefined = $state();
-  let animFrame = 0;
-  let width = $state(900);
-  let height = $state(600);
+  let selectedKinds = $state<Set<string>>(new Set());
+  let selectedNode = $state<GraphNode | null>(null);
+  let containerEl: HTMLDivElement | undefined = $state();
+  let graph3d: any = $state(null);
+  let initialized = false;
+  let isFullscreen = $state(false);
+  let showSidebar = $state(true);
+  let searchQuery = $state('');
+  let highlightedNodes = $state<Set<number>>(new Set());
+  let sidebarTab = $state<'communities' | 'legend' | 'filter'>('communities');
 
-  let communityCount = $derived(new Set(nodes.map((n) => n.community_id).filter((c) => c !== null)).size);
+  // Derived data
+  let allKinds = $derived([...new Set(allNodes.map(n => n.kind))].sort());
+
+  let filteredData = $derived.by(() => {
+    let nodes = allNodes;
+    let edges = allEdges;
+
+    if (selectedCommunity !== null) {
+      nodes = nodes.filter(n => n.community_id === selectedCommunity);
+    }
+    if (selectedKinds.size > 0) {
+      nodes = nodes.filter(n => selectedKinds.has(n.kind));
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      nodes = nodes.filter(n => n.name.toLowerCase().includes(q));
+    }
+
+    const nodeIds = new Set(nodes.map(n => n.id));
+    edges = allEdges.filter(e => nodeIds.has(e.source_id) && nodeIds.has(e.target_id));
+    return { nodes, edges };
+  });
+
+  let multiMemberCommunities = $derived(
+    communities.filter(c => c.member_count > 1).sort((a, b) => b.member_count - a.member_count)
+  );
+
+  let edgeCounts = $derived.by(() => {
+    const counts = new Map<number, number>();
+    for (const e of allEdges) {
+      counts.set(e.source_id, (counts.get(e.source_id) ?? 0) + 1);
+      counts.set(e.target_id, (counts.get(e.target_id) ?? 0) + 1);
+    }
+    return counts;
+  });
+
+  let edgeTypeCounts = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const e of filteredData.edges) {
+      counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+    }
+    return counts;
+  });
+
+  let stats = $derived({
+    nodes: filteredData.nodes.length,
+    edges: filteredData.edges.length,
+    communities: new Set(filteredData.nodes.map(n => n.community_id).filter(c => c !== null)).size,
+  });
+
+  // Selected node connections
+  let selectedConnections = $derived.by(() => {
+    if (!selectedNode) return { callers: [], callees: [], imports: [], importedBy: [], extends_: [], implementedBy: [], other: [] };
+    const nodeMap = new Map(allNodes.map(n => [n.id, n]));
+    const callers: GraphNode[] = [];
+    const callees: GraphNode[] = [];
+    const imports: GraphNode[] = [];
+    const importedBy: GraphNode[] = [];
+    const extends_: GraphNode[] = [];
+    const implementedBy: GraphNode[] = [];
+    const other: GraphNode[] = [];
+
+    for (const e of allEdges) {
+      if (e.source_id === selectedNode.id) {
+        const target = nodeMap.get(e.target_id);
+        if (!target) continue;
+        if (e.kind === 'CALLS') callees.push(target);
+        else if (e.kind === 'IMPORTS') imports.push(target);
+        else if (e.kind === 'EXTENDS') extends_.push(target);
+        else other.push(target);
+      } else if (e.target_id === selectedNode.id) {
+        const source = nodeMap.get(e.source_id);
+        if (!source) continue;
+        if (e.kind === 'CALLS') callers.push(source);
+        else if (e.kind === 'IMPORTS') importedBy.push(source);
+        else if (e.kind === 'IMPLEMENTS') implementedBy.push(source);
+        else other.push(source);
+      }
+    }
+    return { callers, callees, imports, importedBy, extends_, implementedBy, other };
+  });
+
+  // Find linked chapter for selected node
+  let linkedChapter = $derived.by(() => {
+    if (!selectedNode || selectedNode.community_id === null) return null;
+    return chapters.find(ch => ch.community_id === selectedNode!.community_id) ?? null;
+  });
+
+  // Find file for selected node
+  let linkedFile = $derived.by(() => {
+    if (!selectedNode) return null;
+    return files.find(f => f.id === selectedNode!.file_id) ?? null;
+  });
 
   function formatLabel(label: string): string {
-    return label.replace(/^cluster_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    return label.replace(/^cluster_/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 
-  function applyFilter() {
-    // Stop any running simulation
-    if (animFrame) cancelAnimationFrame(animFrame);
+  function getColor(communityId: number | null): string {
+    return COMMUNITY_COLORS[(communityId ?? 0) % COMMUNITY_COLORS.length];
+  }
 
-    // Filter by community
-    let filtered = allNodes;
-    if (selectedCommunity !== null) {
-      filtered = allNodes.filter((n) => n.community_id === selectedCommunity);
+  function getNodeSize(nodeId: number): number {
+    const ec = edgeCounts.get(nodeId) ?? 0;
+    return Math.min(14, Math.max(3, 3 + ec * 0.7));
+  }
+
+  function toggleFullscreen() {
+    if (!containerEl) return;
+    if (!document.fullscreenElement) {
+      containerEl.requestFullscreen();
+      isFullscreen = true;
+    } else {
+      document.exitFullscreen();
+      isFullscreen = false;
     }
+  }
 
-    // Sort by edge count (most connected first) and limit
-    const edgeCounts = new Map<number, number>();
+  function toggleKind(kind: string) {
+    const next = new Set(selectedKinds);
+    if (next.has(kind)) next.delete(kind);
+    else next.add(kind);
+    selectedKinds = next;
+  }
+
+  function focusNode(node: GraphNode) {
+    selectedNode = node;
+    if (graph3d) {
+      // Find node in graph data
+      const gNodes = graph3d.graphData().nodes;
+      const gNode = gNodes.find((n: any) => n.id === node.id);
+      if (gNode) {
+        const distance = 100;
+        const distRatio = 1 + distance / Math.hypot(gNode.x || 1, gNode.y || 1, gNode.z || 1);
+        graph3d.cameraPosition(
+          { x: (gNode.x || 0) * distRatio, y: (gNode.y || 0) * distRatio, z: (gNode.z || 0) * distRatio },
+          { x: gNode.x || 0, y: gNode.y || 0, z: gNode.z || 0 },
+          1200
+        );
+      }
+    }
+  }
+
+  function highlightConnected(nodeId: number) {
+    const connected = new Set<number>([nodeId]);
     for (const e of allEdges) {
-      edgeCounts.set(e.source_id, (edgeCounts.get(e.source_id) ?? 0) + 1);
-      edgeCounts.set(e.target_id, (edgeCounts.get(e.target_id) ?? 0) + 1);
+      if (e.source_id === nodeId) connected.add(e.target_id);
+      if (e.target_id === nodeId) connected.add(e.source_id);
     }
-    filtered = [...filtered].sort((a, b) => (edgeCounts.get(b.id) ?? 0) - (edgeCounts.get(a.id) ?? 0));
-    nodes = filtered.slice(0, maxNodes);
-
-    // Only include edges between visible nodes
-    const nodeIds = new Set(nodes.map((n) => n.id));
-    edges = allEdges.filter((e) => nodeIds.has(e.source_id) && nodeIds.has(e.target_id));
-
-    selectedNode = null;
-    hoveredNode = null;
-
-    if (nodes.length > 0) {
-      initSimulation();
-      animFrame = requestAnimationFrame(tick);
-    }
+    highlightedNodes = connected;
   }
 
-  function connectedNodeIds(nodeId: number): Set<number> {
-    const ids = new Set<number>();
-    for (const e of edges) {
-      if (e.source_id === nodeId) ids.add(e.target_id);
-      if (e.target_id === nodeId) ids.add(e.source_id);
-    }
-    return ids;
+  function clearHighlight() {
+    highlightedNodes = new Set();
   }
 
-  function initSimulation() {
-    const edgeCounts = new Map<number, number>();
-    for (const e of edges) {
-      edgeCounts.set(e.source_id, (edgeCounts.get(e.source_id) ?? 0) + 1);
-      edgeCounts.set(e.target_id, (edgeCounts.get(e.target_id) ?? 0) + 1);
-    }
-
-    // Place nodes in a circle initially, grouped by community
-    const communityGroups = new Map<number, number[]>();
-    nodes.forEach((n, idx) => {
-      const cid = n.community_id ?? -1;
-      if (!communityGroups.has(cid)) communityGroups.set(cid, []);
-      communityGroups.get(cid)!.push(idx);
-    });
-
-    const cx = width / 2;
-    const cy = height / 2;
-    const baseRadius = Math.min(width, height) * 0.35;
-    let groupAngle = 0;
-    const groupAngleStep = (2 * Math.PI) / communityGroups.size;
-
-    const positions: { x: number; y: number }[] = new Array(nodes.length);
-    for (const [, indices] of communityGroups) {
-      const groupCx = cx + baseRadius * 0.5 * Math.cos(groupAngle);
-      const groupCy = cy + baseRadius * 0.5 * Math.sin(groupAngle);
-      indices.forEach((idx, j) => {
-        const memberAngle = groupAngle + ((j / indices.length) * Math.PI * 0.8 - Math.PI * 0.4);
-        const r = baseRadius * 0.3 + Math.random() * baseRadius * 0.2;
-        positions[idx] = {
-          x: groupCx + r * Math.cos(memberAngle),
-          y: groupCy + r * Math.sin(memberAngle),
-        };
-      });
-      groupAngle += groupAngleStep;
-    }
-
-    simNodes = nodes.map((n, idx) => {
-      const ec = edgeCounts.get(n.id) ?? 0;
-      return {
-        node: n,
-        x: positions[idx]?.x ?? cx,
-        y: positions[idx]?.y ?? cy,
-        vx: 0,
-        vy: 0,
-        radius: Math.min(18, Math.max(5, 5 + ec * 1.2)),
-        color: COLORS[(n.community_id ?? 0) % COLORS.length],
-        edgeCount: ec,
-      };
-    });
-  }
-
-  let tickCount = 0;
-  function tick() {
-    tickCount++;
-    const nodeMap = new Map<number, SimNode>();
-    for (const sn of simNodes) nodeMap.set(sn.node.id, sn);
-
-    const cx = width / 2;
-    const cy = height / 2;
-
-    // Reduce simulation speed over time for convergence
-    const cooling = Math.max(0.1, 1 - tickCount / 300);
-
-    for (let i = 0; i < simNodes.length; i++) {
-      const a = simNodes[i];
-      // Center gravity
-      a.vx += (cx - a.x) * 0.001 * cooling;
-      a.vy += (cy - a.y) * 0.001 * cooling;
-
-      // Repulsion (only check nearby nodes for performance)
-      for (let j = i + 1; j < simNodes.length; j++) {
-        const b = simNodes[j];
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        const distSq = dx * dx + dy * dy + 1;
-        if (distSq > 40000) continue; // Skip far-away nodes
-        const force = (1200 / distSq) * cooling;
-        const fx = dx * force;
-        const fy = dy * force;
-        a.vx += fx;
-        a.vy += fy;
-        b.vx -= fx;
-        b.vy -= fy;
-      }
-    }
-
-    // Edge springs — pull connected nodes closer
-    for (const e of edges) {
-      const a = nodeMap.get(e.source_id);
-      const b = nodeMap.get(e.target_id);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) + 0.1;
-      const target = 80;
-      const force = (dist - target) * 0.005 * cooling;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      a.vx += fx;
-      a.vy += fy;
-      b.vx -= fx;
-      b.vy -= fy;
-    }
-
-    // Community attraction — nodes in same community attract gently
-    for (let i = 0; i < simNodes.length; i++) {
-      for (let j = i + 1; j < simNodes.length; j++) {
-        if (simNodes[i].node.community_id !== null &&
-            simNodes[i].node.community_id === simNodes[j].node.community_id) {
-          const dx = simNodes[j].x - simNodes[i].x;
-          const dy = simNodes[j].y - simNodes[i].y;
-          const dist = Math.sqrt(dx * dx + dy * dy) + 0.1;
-          if (dist > 150) {
-            const force = 0.002 * cooling;
-            simNodes[i].vx += dx * force;
-            simNodes[i].vy += dy * force;
-            simNodes[j].vx -= dx * force;
-            simNodes[j].vy -= dy * force;
-          }
-        }
-      }
-    }
-
-    // Apply velocity with damping
-    for (const sn of simNodes) {
-      sn.vx *= 0.8;
-      sn.vy *= 0.8;
-      sn.x += sn.vx * 0.4;
-      sn.y += sn.vy * 0.4;
-      // Clamp to bounds with padding
-      const pad = 20;
-      sn.x = Math.max(sn.radius + pad, Math.min(width - sn.radius - pad, sn.x));
-      sn.y = Math.max(sn.radius + pad, Math.min(height - sn.radius - pad, sn.y));
-    }
-
-    simNodes = [...simNodes]; // trigger reactivity
-
-    // Stop after convergence
-    if (tickCount < 500) {
-      animFrame = requestAnimationFrame(tick);
-    }
-  }
-
-  function findNodeAt(x: number, y: number): SimNode | null {
-    for (const sn of simNodes) {
-      const dx = sn.x - x;
-      const dy = sn.y - y;
-      if (dx * dx + dy * dy < (sn.radius + 4) * (sn.radius + 4)) return sn;
-    }
-    return null;
-  }
-
-  function handleSvgMouseMove(e: MouseEvent) {
-    if (!svgEl) return;
-    const rect = svgEl.getBoundingClientRect();
-    mouseX = e.clientX - rect.left;
-    mouseY = e.clientY - rect.top;
-    hoveredNode = findNodeAt(mouseX, mouseY);
-  }
-
-  function handleSvgClick() {
-    const clicked = findNodeAt(mouseX, mouseY);
-    selectedNode = clicked === selectedNode ? null : clicked;
-  }
-
-  let selectedConnected = $derived(selectedNode ? connectedNodeIds(selectedNode.node.id) : new Set<number>());
-
-  function nodeOpacity(sn: SimNode): number {
-    if (!selectedNode) return 1;
-    if (sn.node.id === selectedNode.node.id) return 1;
-    if (selectedConnected.has(sn.node.id)) return 1;
-    return 0.1;
-  }
-
-  function edgeOpacity(e: GraphEdge): number {
-    if (!selectedNode) return 0.15;
-    if (e.source_id === selectedNode.node.id || e.target_id === selectedNode.node.id) return 0.7;
-    return 0.02;
-  }
-
+  // Load all data
   if (typeof window !== 'undefined') {
-    Promise.all([fetchGraph(), fetchCommunities()]).then(([graph, comms]) => {
-      allNodes = graph.nodes;
-      allEdges = graph.edges;
-      communities = comms.sort((a, b) => b.member_count - a.member_count);
-      loading = false;
-
-      if (allNodes.length > 0) {
-        if (svgEl) {
-          const rect = svgEl.getBoundingClientRect();
-          width = rect.width || 900;
-          height = rect.height || 600;
-        }
-        applyFilter();
-      }
-    });
+    Promise.all([fetchGraph(), fetchCommunities(), fetchChapters(), fetchFiles()])
+      .then(([graph, comms, chs, fls]) => {
+        allNodes = graph.nodes;
+        allEdges = graph.edges;
+        communities = comms.sort((a, b) => b.member_count - a.member_count);
+        chapters = chs;
+        files = fls;
+        loading = false;
+      })
+      .catch(e => {
+        error = `Failed to load graph data: ${e}`;
+        loading = false;
+      });
   }
+
+  // Initialize 3D graph
+  $effect(() => {
+    if (loading || !containerEl || initialized || allNodes.length === 0) return;
+    initialized = true;
+
+    import('3d-force-graph').then(({ default: ForceGraph3D }) => {
+      const nodeMap = new Map(allNodes.map(n => [n.id, n]));
+
+      const gData = {
+        nodes: allNodes.map(n => ({
+          id: n.id,
+          name: n.name,
+          kind: n.kind,
+          community_id: n.community_id,
+          file_id: n.file_id,
+          val: getNodeSize(n.id),
+        })),
+        links: allEdges.map(e => ({
+          source: e.source_id,
+          target: e.target_id,
+          kind: e.kind,
+          confidence: e.confidence,
+        })),
+      };
+
+      const fg = ForceGraph3D()(containerEl!)
+        .backgroundColor('#0a0a1a')
+        .graphData(gData)
+        .nodeLabel((node: any) => {
+          const ec = edgeCounts.get(node.id) ?? 0;
+          const comm = communities.find(c => c.id === node.community_id);
+          const commLabel = comm ? formatLabel(comm.label) : 'Uncategorized';
+          return `<div style="font-family:ui-monospace,monospace;font-size:12px;padding:8px 12px;background:rgba(10,10,26,0.95);border:1px solid rgba(255,255,255,0.15);border-radius:8px;max-width:280px;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:#f1f5f9">${node.name}</div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+              <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${getColor(node.community_id)}22;color:${getColor(node.community_id)};border:1px solid ${getColor(node.community_id)}44">${node.kind}</span>
+              <span style="font-size:10px;color:#94a3b8">${ec} connections</span>
+            </div>
+            <div style="font-size:10px;color:#64748b">
+              <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${getColor(node.community_id)};margin-right:4px;vertical-align:middle"></span>
+              ${commLabel}
+            </div>
+            <div style="font-size:10px;color:#475569;margin-top:4px;border-top:1px solid rgba(255,255,255,0.06);padding-top:4px">Click to explore details</div>
+          </div>`;
+        })
+        .nodeColor((node: any) => {
+          if (highlightedNodes.size > 0 && !highlightedNodes.has(node.id)) {
+            return 'rgba(100,100,100,0.2)';
+          }
+          return getColor(node.community_id);
+        })
+        .nodeVal((node: any) => node.val)
+        .nodeOpacity(0.9)
+        .linkColor((link: any) => {
+          const edgeInfo = EDGE_COLORS[link.kind];
+          if (highlightedNodes.size > 0) {
+            if (highlightedNodes.has(link.source?.id ?? link.source) && highlightedNodes.has(link.target?.id ?? link.target)) {
+              return edgeInfo?.color ?? '#4b5563';
+            }
+            return 'rgba(50,50,50,0.1)';
+          }
+          return edgeInfo?.color ?? '#4b5563';
+        })
+        .linkOpacity(0.4)
+        .linkWidth((link: any) => {
+          if (highlightedNodes.size > 0) {
+            const sId = link.source?.id ?? link.source;
+            const tId = link.target?.id ?? link.target;
+            if (highlightedNodes.has(sId) && highlightedNodes.has(tId)) return 1.5;
+            return 0.2;
+          }
+          return link.kind === 'CALLS' ? 0.8 : 0.5;
+        })
+        .linkDirectionalParticles((link: any) => link.kind === 'CALLS' ? 2 : link.kind === 'IMPORTS' ? 1 : 0)
+        .linkDirectionalParticleWidth(1.5)
+        .linkDirectionalParticleSpeed(0.004)
+        .linkDirectionalParticleColor((link: any) => EDGE_COLORS[link.kind]?.color ?? '#6366f1')
+        .linkDirectionalArrowLength(3)
+        .linkDirectionalArrowRelPos(1)
+        .linkDirectionalArrowColor((link: any) => EDGE_COLORS[link.kind]?.color ?? '#4b5563');
+
+      fg.d3Force('charge')?.strength(-150);
+      fg.d3Force('link')?.distance(60);
+
+      // Add text labels as sprites
+      try {
+        fg.nodeThreeObjectExtend(true)
+          .nodeThreeObject((node: any) => {
+            try {
+              const THREE = (window as any).THREE;
+              if (!THREE) return null;
+              const ec = edgeCounts.get(node.id) ?? 0;
+              // Only show labels for nodes with connections or if few total nodes
+              if (ec < 1 && allNodes.length > 50) return null;
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              if (!ctx) return null;
+              canvas.width = 512;
+              canvas.height = 64;
+              ctx.font = 'bold 28px ui-monospace, monospace';
+              ctx.fillStyle = '#e2e8f0';
+              ctx.strokeStyle = 'rgba(10,10,26,0.8)';
+              ctx.lineWidth = 4;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              const label = node.name.length > 24 ? node.name.slice(0, 22) + '..' : node.name;
+              ctx.strokeText(label, 256, 32);
+              ctx.fillText(label, 256, 32);
+              const texture = new THREE.CanvasTexture(canvas);
+              texture.needsUpdate = true;
+              const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+              const sprite = new THREE.Sprite(material);
+              const scale = Math.max(20, 16 + ec * 2);
+              sprite.scale.set(scale, scale * 64 / 512, 1);
+              sprite.position.set(0, node.val + 5, 0);
+              return sprite;
+            } catch {
+              return null;
+            }
+          });
+      } catch {
+        // Labels unavailable
+      }
+
+      fg.onNodeClick((node: any) => {
+        const graphNode = nodeMap.get(node.id) ?? null;
+        selectedNode = graphNode;
+        if (graphNode) highlightConnected(graphNode.id);
+
+        const distance = 100;
+        const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
+        fg.cameraPosition(
+          { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
+          { x: node.x, y: node.y, z: node.z },
+          1200
+        );
+      });
+
+      fg.onBackgroundClick(() => {
+        selectedNode = null;
+        clearHighlight();
+      });
+
+      graph3d = fg;
+
+      const observer = new ResizeObserver(() => {
+        if (containerEl) {
+          fg.width(containerEl.clientWidth);
+          fg.height(containerEl.clientHeight);
+        }
+      });
+      observer.observe(containerEl!);
+      return () => observer.disconnect();
+    });
+  });
+
+  // Update graph data when filters change
+  $effect(() => {
+    if (!graph3d || loading) return;
+    const data = filteredData;
+    graph3d.graphData({
+      nodes: data.nodes.map((n: GraphNode) => ({
+        id: n.id,
+        name: n.name,
+        kind: n.kind,
+        community_id: n.community_id,
+        file_id: n.file_id,
+        val: getNodeSize(n.id),
+      })),
+      links: data.edges.map((e: GraphEdge) => ({
+        source: e.source_id,
+        target: e.target_id,
+        kind: e.kind,
+        confidence: e.confidence,
+      })),
+    });
+  });
 </script>
 
-<div class="flex h-full">
-  <div class="flex-1 flex flex-col">
-    <div class="p-4 border-b border-gray-800">
-      <div class="flex items-center gap-4 mb-2">
-        <a href="/explore" class="text-gray-500 hover:text-gray-300 transition-colors">&larr;</a>
-        <h1 class="text-2xl font-bold">Knowledge Graph</h1>
-        {#if !loading && nodes.length > 0}
-          <span class="text-sm text-gray-400">{nodes.length} nodes</span>
-          <span class="text-sm text-gray-400">{edges.length} edges</span>
-          <span class="text-sm text-gray-400">{communityCount} communities</span>
-        {/if}
+<div class="graph-page" bind:this={containerEl}>
+  {#if loading}
+    <div class="absolute inset-0 flex items-center justify-center z-30 bg-[#0a0a1a]">
+      <div class="text-center">
+        <div class="w-12 h-12 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin mx-auto mb-4"></div>
+        <p class="text-gray-400 text-lg font-medium">Building knowledge graph...</p>
+        <p class="text-gray-600 text-sm mt-1">Mapping symbols, edges & communities</p>
       </div>
+    </div>
+  {:else if error}
+    <div class="absolute inset-0 flex items-center justify-center z-30 bg-[#0a0a1a]">
+      <div class="text-center max-w-sm">
+        <p class="text-red-400 text-lg mb-2">Failed to load graph</p>
+        <p class="text-gray-500 text-sm">{error}</p>
+      </div>
+    </div>
+  {:else if allNodes.length === 0}
+    <div class="absolute inset-0 flex items-center justify-center z-30 bg-[#0a0a1a]">
+      <div class="text-center">
+        <p class="text-gray-400 text-lg mb-2">No graph data</p>
+        <p class="text-gray-500">Run <code class="text-indigo-400 font-mono">codeilus analyze ./repo</code> first</p>
+      </div>
+    </div>
+  {/if}
 
-      {#if !loading && allNodes.length > 0}
-        <div class="flex items-center gap-3 flex-wrap">
-          <select
-            class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 outline-none focus:border-indigo-500"
-            onchange={(e) => { selectedCommunity = (e.target as HTMLSelectElement).value === '' ? null : parseInt((e.target as HTMLSelectElement).value); tickCount = 0; applyFilter(); }}
-          >
-            <option value="">All communities</option>
-            {#each communities as comm}
-              <option value={comm.id}>{formatLabel(comm.label)} ({comm.member_count})</option>
+  <!-- LEFT SIDEBAR: Communities, Legend, Filters -->
+  {#if !loading && allNodes.length > 0}
+    <div class="sidebar {showSidebar ? 'open' : 'closed'}">
+      <!-- Toggle button -->
+      <button
+        class="sidebar-toggle"
+        onclick={() => showSidebar = !showSidebar}
+        title={showSidebar ? 'Collapse sidebar' : 'Expand sidebar'}
+      >
+        {#if showSidebar}
+          <ChevronRight size={14} />
+        {:else}
+          <ChevronDown size={14} />
+        {/if}
+      </button>
+
+      {#if showSidebar}
+        <!-- Header -->
+        <div class="sidebar-header">
+          <a href="/explore" class="back-btn" title="Back to Explore">
+            <ArrowLeft size={14} />
+          </a>
+          <h1 class="text-sm font-semibold text-white">Knowledge Graph</h1>
+        </div>
+
+        <!-- Stats bar -->
+        <div class="stats-bar">
+          <div class="stat">
+            <span class="stat-value">{stats.nodes}</span>
+            <span class="stat-label">nodes</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{stats.edges}</span>
+            <span class="stat-label">edges</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{stats.communities}</span>
+            <span class="stat-label">modules</span>
+          </div>
+        </div>
+
+        <!-- Search -->
+        <div class="search-box">
+          <Search size={13} class="text-gray-500" />
+          <input
+            type="text"
+            placeholder="Search symbols..."
+            bind:value={searchQuery}
+            class="search-input"
+          />
+          {#if searchQuery}
+            <button class="text-gray-500 hover:text-gray-300" onclick={() => searchQuery = ''}>
+              <X size={12} />
+            </button>
+          {/if}
+        </div>
+
+        <!-- Tab buttons -->
+        <div class="tab-bar">
+          <button class="tab-btn {sidebarTab === 'communities' ? 'active' : ''}" onclick={() => sidebarTab = 'communities'}>
+            <Layers size={12} />
+            Modules
+          </button>
+          <button class="tab-btn {sidebarTab === 'legend' ? 'active' : ''}" onclick={() => sidebarTab = 'legend'}>
+            <Info size={12} />
+            Legend
+          </button>
+          <button class="tab-btn {sidebarTab === 'filter' ? 'active' : ''}" onclick={() => sidebarTab = 'filter'}>
+            <Filter size={12} />
+            Filter
+          </button>
+        </div>
+
+        <!-- Tab content -->
+        <div class="tab-content">
+          {#if sidebarTab === 'communities'}
+            <!-- Community list -->
+            <button
+              class="comm-item {selectedCommunity === null ? 'active' : ''}"
+              onclick={() => { selectedCommunity = null; selectedNode = null; clearHighlight(); }}
+            >
+              <span class="comm-dot" style="background: linear-gradient(135deg, #6366f1, #ec4899, #14b8a6)"></span>
+              <span class="comm-name">All modules</span>
+              <span class="comm-count">{allNodes.length}</span>
+            </button>
+
+            {#each multiMemberCommunities as comm}
+              {@const chapter = chapters.find(ch => ch.community_id === comm.id)}
+              <button
+                class="comm-item {selectedCommunity === comm.id ? 'active' : ''}"
+                onclick={() => { selectedCommunity = selectedCommunity === comm.id ? null : comm.id; selectedNode = null; clearHighlight(); }}
+              >
+                <span class="comm-dot" style="background: {COMMUNITY_COLORS[comm.id % COMMUNITY_COLORS.length]}"></span>
+                <div class="comm-info">
+                  <span class="comm-name">{formatLabel(comm.label)}</span>
+                  {#if chapter}
+                    <a
+                      href="/learn/{chapter.id}"
+                      class="comm-chapter-link"
+                      onclick={(e: MouseEvent) => e.stopPropagation()}
+                    >
+                      <BookOpen size={10} />
+                      Ch.{chapter.order_index + 1}
+                    </a>
+                  {/if}
+                </div>
+                <span class="comm-count">{comm.member_count}</span>
+              </button>
             {/each}
-          </select>
 
-          <select
-            class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 outline-none focus:border-indigo-500"
-            bind:value={maxNodes}
-            onchange={() => { tickCount = 0; applyFilter(); }}
-          >
-            <option value={30}>Top 30 nodes</option>
-            <option value={50}>Top 50 nodes</option>
-            <option value={100}>Top 100 nodes</option>
-            <option value={200}>Top 200 nodes</option>
-            <option value={9999}>All nodes</option>
-          </select>
+          {:else if sidebarTab === 'legend'}
+            <!-- Edge types -->
+            <div class="legend-section">
+              <h3 class="legend-title">Edge Types</h3>
+              <p class="legend-desc">Lines between nodes show how symbols relate</p>
+              {#each Object.entries(EDGE_COLORS) as [kind, info]}
+                {@const count = edgeTypeCounts.get(kind) ?? 0}
+                {#if count > 0}
+                  <div class="legend-item">
+                    <span class="legend-line" style="background: {info.color}"></span>
+                    <span class="legend-label">{info.label}</span>
+                    <span class="legend-count">{count}</span>
+                  </div>
+                {/if}
+              {/each}
+            </div>
 
-          <span class="text-xs text-gray-500">Showing most connected nodes. Click a node to highlight connections.</span>
+            <!-- Node kinds -->
+            <div class="legend-section">
+              <h3 class="legend-title">Symbol Types</h3>
+              <p class="legend-desc">Each node represents a code symbol</p>
+              {#each allKinds as kind}
+                {@const info = KIND_ICONS[kind.toLowerCase()] ?? { label: kind, shape: 'circle' }}
+                {@const count = filteredData.nodes.filter(n => n.kind === kind).length}
+                <div class="legend-item">
+                  <span class="legend-kind-dot"></span>
+                  <span class="legend-label">{info.label}</span>
+                  <span class="legend-count">{count}</span>
+                </div>
+              {/each}
+            </div>
+
+            <!-- Colors -->
+            <div class="legend-section">
+              <h3 class="legend-title">Colors = Modules</h3>
+              <p class="legend-desc">Nodes with the same color belong to the same functional module (detected via community analysis)</p>
+            </div>
+
+            <!-- Interaction guide -->
+            <div class="legend-section">
+              <h3 class="legend-title">How to Navigate</h3>
+              <div class="guide-list">
+                <div class="guide-item"><kbd>Click</kbd> node to see details & connections</div>
+                <div class="guide-item"><kbd>Drag</kbd> to rotate the view</div>
+                <div class="guide-item"><kbd>Scroll</kbd> to zoom in/out</div>
+                <div class="guide-item"><kbd>Right-drag</kbd> to pan</div>
+                <div class="guide-item">Use <strong>Modules</strong> tab to filter by area</div>
+                <div class="guide-item">Click <strong>chapter links</strong> to learn more</div>
+              </div>
+            </div>
+
+          {:else if sidebarTab === 'filter'}
+            <!-- Kind filter -->
+            <div class="legend-section">
+              <h3 class="legend-title">Filter by Symbol Type</h3>
+              <p class="legend-desc">Show only specific types of symbols</p>
+              {#each allKinds as kind}
+                {@const count = allNodes.filter(n => n.kind === kind).length}
+                <button
+                  class="filter-chip {selectedKinds.has(kind) ? 'active' : ''}"
+                  onclick={() => toggleKind(kind)}
+                >
+                  <span class="filter-chip-label">{kind}</span>
+                  <span class="filter-chip-count">{count}</span>
+                </button>
+              {/each}
+              {#if selectedKinds.size > 0}
+                <button
+                  class="clear-filter-btn"
+                  onclick={() => selectedKinds = new Set()}
+                >
+                  Clear filters
+                </button>
+              {/if}
+            </div>
+
+            <!-- Active filters summary -->
+            {#if selectedCommunity !== null || selectedKinds.size > 0 || searchQuery}
+              <div class="legend-section">
+                <h3 class="legend-title">Active Filters</h3>
+                <div class="active-filters">
+                  {#if selectedCommunity !== null}
+                    {@const comm = communities.find(c => c.id === selectedCommunity)}
+                    <span class="active-filter-tag">
+                      Module: {comm ? formatLabel(comm.label) : selectedCommunity}
+                      <button onclick={() => { selectedCommunity = null; }}>
+                        <X size={10} />
+                      </button>
+                    </span>
+                  {/if}
+                  {#each [...selectedKinds] as kind}
+                    <span class="active-filter-tag">
+                      {kind}
+                      <button onclick={() => toggleKind(kind)}>
+                        <X size={10} />
+                      </button>
+                    </span>
+                  {/each}
+                  {#if searchQuery}
+                    <span class="active-filter-tag">
+                      Search: {searchQuery}
+                      <button onclick={() => searchQuery = ''}>
+                        <X size={10} />
+                      </button>
+                    </span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          {/if}
         </div>
       {/if}
     </div>
 
-    {#if loading}
-      <div class="flex-1 flex items-center justify-center">
-        <p class="text-gray-400 animate-pulse">Loading...</p>
-      </div>
-    {:else if allNodes.length === 0}
-      <div class="flex-1 flex items-center justify-center">
-        <div class="text-center">
-          <p class="text-gray-400 text-lg mb-2">No graph data</p>
-          <p class="text-gray-500">Run <code class="text-indigo-400 font-mono">codeilus analyze ./repo</code> first</p>
+    <!-- Fullscreen toggle (top-right) -->
+    <button
+      class="fullscreen-btn"
+      onclick={toggleFullscreen}
+      title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+    >
+      {#if isFullscreen}
+        <Minimize2 size={16} />
+      {:else}
+        <Maximize2 size={16} />
+      {/if}
+    </button>
+
+    <!-- RIGHT DETAIL PANEL -->
+    {#if selectedNode}
+      <div class="detail-panel">
+        <div class="detail-header">
+          <div class="detail-title-row">
+            <span class="detail-kind-badge" style="background: {getColor(selectedNode.community_id)}22; color: {getColor(selectedNode.community_id)}; border-color: {getColor(selectedNode.community_id)}44">
+              {selectedNode.kind}
+            </span>
+            <button
+              class="detail-close"
+              onclick={() => { selectedNode = null; clearHighlight(); }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <h2 class="detail-name">{selectedNode.name}</h2>
+        </div>
+
+        <!-- Quick info cards -->
+        <div class="detail-cards">
+          {#if linkedFile}
+            <a href="/explore/tree" class="detail-card clickable" title="View in file tree">
+              <FileCode size={14} class="text-emerald-400" />
+              <div class="detail-card-content">
+                <span class="detail-card-label">File</span>
+                <span class="detail-card-value">{linkedFile.path.split('/').pop()}</span>
+                <span class="detail-card-sub">{linkedFile.path}</span>
+              </div>
+            </a>
+          {/if}
+
+          {#if selectedNode.community_id !== null}
+            {@const comm = communities.find(c => c.id === selectedNode?.community_id)}
+            <div class="detail-card">
+              <span class="detail-card-dot" style="background: {getColor(selectedNode.community_id)}"></span>
+              <div class="detail-card-content">
+                <span class="detail-card-label">Module</span>
+                <span class="detail-card-value">{comm ? formatLabel(comm.label) : `Community ${selectedNode.community_id}`}</span>
+              </div>
+            </div>
+          {/if}
+
+          <div class="detail-card">
+            <GitBranch size={14} class="text-indigo-400" />
+            <div class="detail-card-content">
+              <span class="detail-card-label">Connections</span>
+              <span class="detail-card-value">{edgeCounts.get(selectedNode.id) ?? 0} total</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Learn link -->
+        {#if linkedChapter}
+          <a href="/learn/{linkedChapter.id}" class="learn-link">
+            <BookOpen size={16} />
+            <div>
+              <div class="learn-link-title">Chapter {linkedChapter.order_index + 1}: {formatLabel(linkedChapter.title)}</div>
+              <div class="learn-link-sub">Open learning material for this module</div>
+            </div>
+            <ChevronRight size={14} class="ml-auto text-gray-500" />
+          </a>
+        {/if}
+
+        <!-- Connections -->
+        <div class="detail-connections">
+          {#if selectedConnections.callees.length > 0}
+            <div class="conn-group">
+              <h3 class="conn-label">
+                <span class="conn-edge-dot" style="background: {EDGE_COLORS.CALLS.color}"></span>
+                Calls <span class="conn-count">{selectedConnections.callees.length}</span>
+              </h3>
+              {#each selectedConnections.callees as n}
+                <button class="conn-item" onclick={() => focusNode(n)}>
+                  <span class="conn-node-dot" style="background: {getColor(n.community_id)}"></span>
+                  <span class="conn-node-name">{n.name}</span>
+                  <span class="conn-node-kind">{n.kind}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if selectedConnections.callers.length > 0}
+            <div class="conn-group">
+              <h3 class="conn-label">
+                <span class="conn-edge-dot" style="background: {EDGE_COLORS.CALLS.color}"></span>
+                Called by <span class="conn-count">{selectedConnections.callers.length}</span>
+              </h3>
+              {#each selectedConnections.callers as n}
+                <button class="conn-item" onclick={() => focusNode(n)}>
+                  <span class="conn-node-dot" style="background: {getColor(n.community_id)}"></span>
+                  <span class="conn-node-name">{n.name}</span>
+                  <span class="conn-node-kind">{n.kind}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if selectedConnections.imports.length > 0}
+            <div class="conn-group">
+              <h3 class="conn-label">
+                <span class="conn-edge-dot" style="background: {EDGE_COLORS.IMPORTS.color}"></span>
+                Imports <span class="conn-count">{selectedConnections.imports.length}</span>
+              </h3>
+              {#each selectedConnections.imports as n}
+                <button class="conn-item" onclick={() => focusNode(n)}>
+                  <span class="conn-node-dot" style="background: {getColor(n.community_id)}"></span>
+                  <span class="conn-node-name">{n.name}</span>
+                  <span class="conn-node-kind">{n.kind}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if selectedConnections.importedBy.length > 0}
+            <div class="conn-group">
+              <h3 class="conn-label">
+                <span class="conn-edge-dot" style="background: {EDGE_COLORS.IMPORTS.color}"></span>
+                Imported by <span class="conn-count">{selectedConnections.importedBy.length}</span>
+              </h3>
+              {#each selectedConnections.importedBy as n}
+                <button class="conn-item" onclick={() => focusNode(n)}>
+                  <span class="conn-node-dot" style="background: {getColor(n.community_id)}"></span>
+                  <span class="conn-node-name">{n.name}</span>
+                  <span class="conn-node-kind">{n.kind}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if selectedConnections.extends_.length > 0}
+            <div class="conn-group">
+              <h3 class="conn-label">
+                <span class="conn-edge-dot" style="background: {EDGE_COLORS.EXTENDS.color}"></span>
+                Extends <span class="conn-count">{selectedConnections.extends_.length}</span>
+              </h3>
+              {#each selectedConnections.extends_ as n}
+                <button class="conn-item" onclick={() => focusNode(n)}>
+                  <span class="conn-node-dot" style="background: {getColor(n.community_id)}"></span>
+                  <span class="conn-node-name">{n.name}</span>
+                  <span class="conn-node-kind">{n.kind}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if selectedConnections.implementedBy.length > 0}
+            <div class="conn-group">
+              <h3 class="conn-label">
+                <span class="conn-edge-dot" style="background: {EDGE_COLORS.IMPLEMENTS.color}"></span>
+                Implemented by <span class="conn-count">{selectedConnections.implementedBy.length}</span>
+              </h3>
+              {#each selectedConnections.implementedBy as n}
+                <button class="conn-item" onclick={() => focusNode(n)}>
+                  <span class="conn-node-dot" style="background: {getColor(n.community_id)}"></span>
+                  <span class="conn-node-name">{n.name}</span>
+                  <span class="conn-node-kind">{n.kind}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if selectedConnections.other.length > 0}
+            <div class="conn-group">
+              <h3 class="conn-label">
+                Other <span class="conn-count">{selectedConnections.other.length}</span>
+              </h3>
+              {#each selectedConnections.other as n}
+                <button class="conn-item" onclick={() => focusNode(n)}>
+                  <span class="conn-node-dot" style="background: {getColor(n.community_id)}"></span>
+                  <span class="conn-node-name">{n.name}</span>
+                  <span class="conn-node-kind">{n.kind}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if (edgeCounts.get(selectedNode.id) ?? 0) === 0}
+            <p class="text-xs text-gray-500 italic">This symbol has no connections in the graph.</p>
+          {/if}
         </div>
       </div>
-    {:else}
-      <div class="flex-1 relative">
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <svg
-          bind:this={svgEl}
-          class="w-full h-full bg-gray-950"
-          onmousemove={handleSvgMouseMove}
-          onclick={handleSvgClick}
-        >
-          {#each edges as edge}
-            {@const src = simNodes.find((n) => n.node.id === edge.source_id)}
-            {@const tgt = simNodes.find((n) => n.node.id === edge.target_id)}
-            {#if src && tgt}
-              <line
-                x1={src.x} y1={src.y}
-                x2={tgt.x} y2={tgt.y}
-                stroke="#4b5563"
-                stroke-width="0.5"
-                opacity={edgeOpacity(edge)}
-              />
-            {/if}
-          {/each}
-          {#each simNodes as sn}
-            <circle
-              cx={sn.x} cy={sn.y} r={sn.radius}
-              fill={sn.color}
-              opacity={nodeOpacity(sn)}
-              class="cursor-pointer"
-              stroke={selectedNode?.node.id === sn.node.id ? '#fff' : 'none'}
-              stroke-width="2"
-            />
-            {#if sn.radius >= 10}
-              <text
-                x={sn.x} y={sn.y + sn.radius + 12}
-                text-anchor="middle"
-                fill="#9ca3af"
-                font-size="9"
-                opacity={nodeOpacity(sn)}
-              >{sn.node.name}</text>
-            {/if}
-          {/each}
-        </svg>
-        {#if hoveredNode}
-          <div
-            class="absolute pointer-events-none bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 shadow-lg z-10"
-            style="left: {mouseX + 12}px; top: {mouseY - 8}px"
-          >
-            <div class="font-mono font-semibold">{hoveredNode.node.name}</div>
-            <div class="text-xs text-gray-400">{hoveredNode.node.kind} &middot; {hoveredNode.edgeCount} connections</div>
-          </div>
-        {/if}
-      </div>
     {/if}
-  </div>
 
-  {#if selectedNode}
-    <div class="w-72 border-l border-gray-800 bg-gray-900 p-4 overflow-auto">
-      <h2 class="text-lg font-semibold mb-2 font-mono">{selectedNode.node.name}</h2>
-      <div class="space-y-2 text-sm">
-        <div><span class="text-gray-500">Kind:</span> <span class="text-gray-300">{selectedNode.node.kind}</span></div>
-        {#if selectedNode.node.community_id !== null}
-          {@const comm = communities.find((c) => c.id === selectedNode?.node.community_id)}
-          <div><span class="text-gray-500">Module:</span> <span class="text-gray-300">{comm ? formatLabel(comm.label) : `Community ${selectedNode.node.community_id}`}</span></div>
-        {/if}
-        <div><span class="text-gray-500">Connections:</span> <span class="text-gray-300">{selectedNode.edgeCount}</span></div>
-      </div>
-
-      <h3 class="text-sm font-semibold text-gray-300 mt-4 mb-2">Connected ({selectedConnected.size})</h3>
-      <div class="space-y-1 max-h-96 overflow-auto">
-        {#each simNodes.filter((sn) => selectedConnected.has(sn.node.id)).sort((a, b) => b.edgeCount - a.edgeCount) as conn}
-          <div class="text-sm text-gray-400 flex items-center gap-2 py-0.5">
-            <span class="w-2 h-2 rounded-full inline-block shrink-0" style="background: {conn.color}"></span>
-            <span class="font-mono text-xs truncate">{conn.node.name}</span>
-            <span class="text-xs text-gray-600 ml-auto">{conn.node.kind}</span>
-          </div>
-        {/each}
+    <!-- BOTTOM GUIDANCE BAR -->
+    <div class="guidance-bar">
+      <div class="guidance-content">
+        <span class="guidance-icon"><Info size={14} /></span>
+        <span>
+          <strong>Nodes</strong> = code symbols &nbsp;|&nbsp;
+          <strong>Colors</strong> = functional modules &nbsp;|&nbsp;
+          <strong>Lines</strong> = relationships
+          (<span style="color: {EDGE_COLORS.CALLS.color}">calls</span>,
+           <span style="color: {EDGE_COLORS.IMPORTS.color}">imports</span>,
+           <span style="color: {EDGE_COLORS.EXTENDS.color}">extends</span>)
+          &nbsp;|&nbsp; Click any node for details
+        </span>
       </div>
     </div>
   {/if}
 </div>
+
+<style>
+  @reference "tailwindcss";
+
+  .graph-page {
+    @apply relative w-full h-full overflow-hidden;
+    background: #0a0a1a;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    @apply absolute top-0 left-0 h-full z-20 flex flex-col;
+    background: rgba(10, 10, 26, 0.92);
+    backdrop-filter: blur(16px);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    transition: width 0.2s ease;
+  }
+  .sidebar.open {
+    width: 280px;
+  }
+  .sidebar.closed {
+    width: 36px;
+  }
+
+  .sidebar-toggle {
+    @apply absolute top-3 right-[-14px] w-7 h-7 rounded-full flex items-center justify-center z-30;
+    background: rgba(30, 30, 50, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sidebar-toggle:hover {
+    color: white;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .sidebar-header {
+    @apply flex items-center gap-2 px-4 pt-4 pb-2;
+  }
+
+  .back-btn {
+    @apply w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-white transition-colors;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .back-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  /* ── Stats ── */
+  .stats-bar {
+    @apply flex items-center gap-1 px-4 py-2;
+  }
+  .stat {
+    @apply flex-1 text-center py-1.5 rounded-lg;
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .stat-value {
+    @apply block text-sm font-bold text-white;
+  }
+  .stat-label {
+    @apply block text-[10px] text-gray-500;
+  }
+
+  /* ── Search ── */
+  .search-box {
+    @apply flex items-center gap-2 mx-4 my-2 px-3 py-1.5 rounded-lg;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .search-input {
+    @apply flex-1 bg-transparent text-sm text-gray-200 outline-none placeholder:text-gray-600;
+  }
+
+  /* ── Tabs ── */
+  .tab-bar {
+    @apply flex items-center gap-0.5 mx-4 my-1 p-0.5 rounded-lg;
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .tab-btn {
+    @apply flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[11px] font-medium transition-colors;
+    color: #64748b;
+  }
+  .tab-btn:hover {
+    color: #94a3b8;
+  }
+  .tab-btn.active {
+    background: rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+  }
+
+  .tab-content {
+    @apply flex-1 overflow-auto px-3 py-2;
+  }
+
+  /* ── Community items ── */
+  .comm-item {
+    @apply flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors;
+    cursor: pointer;
+  }
+  .comm-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .comm-item.active {
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+  }
+  .comm-dot {
+    @apply w-3 h-3 rounded-full shrink-0;
+  }
+  .comm-info {
+    @apply flex-1 min-w-0 flex flex-col;
+  }
+  .comm-name {
+    @apply text-xs font-medium text-gray-300 truncate flex-1;
+  }
+  .comm-chapter-link {
+    @apply inline-flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors mt-0.5;
+  }
+  .comm-count {
+    @apply text-[10px] text-gray-600 shrink-0 tabular-nums;
+  }
+
+  /* ── Legend ── */
+  .legend-section {
+    @apply mb-4;
+  }
+  .legend-title {
+    @apply text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5;
+  }
+  .legend-desc {
+    @apply text-[10px] text-gray-600 mb-2 leading-relaxed;
+  }
+  .legend-item {
+    @apply flex items-center gap-2 py-1;
+  }
+  .legend-line {
+    @apply w-5 h-0.5 rounded-full shrink-0;
+  }
+  .legend-kind-dot {
+    @apply w-2.5 h-2.5 rounded-full bg-gray-500 shrink-0;
+  }
+  .legend-label {
+    @apply text-xs text-gray-300 flex-1;
+  }
+  .legend-count {
+    @apply text-[10px] text-gray-600 tabular-nums;
+  }
+
+  .guide-list {
+    @apply space-y-1.5;
+  }
+  .guide-item {
+    @apply text-[11px] text-gray-400 leading-relaxed;
+  }
+  .guide-item kbd {
+    @apply inline-block px-1.5 py-0.5 rounded text-[10px] font-mono;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+  }
+  .guide-item strong {
+    @apply font-semibold text-gray-300;
+  }
+
+  /* ── Filter ── */
+  .filter-chip {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs mr-1 mb-1 transition-colors;
+    background: rgba(255, 255, 255, 0.06);
+    color: #94a3b8;
+    border: 1px solid transparent;
+  }
+  .filter-chip:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #e2e8f0;
+  }
+  .filter-chip.active {
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+  .filter-chip-label {
+    @apply font-medium;
+  }
+  .filter-chip-count {
+    @apply text-[10px] text-gray-600;
+  }
+  .clear-filter-btn {
+    @apply block mt-2 text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors;
+  }
+
+  .active-filters {
+    @apply flex flex-wrap gap-1;
+  }
+  .active-filter-tag {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium;
+    background: rgba(99, 102, 241, 0.12);
+    color: #818cf8;
+  }
+  .active-filter-tag button {
+    @apply hover:text-white transition-colors;
+    cursor: pointer;
+  }
+
+  /* ── Fullscreen button ── */
+  .fullscreen-btn {
+    @apply absolute top-4 right-4 z-20 w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-white transition-all;
+    background: rgba(10, 10, 26, 0.8);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .fullscreen-btn:hover {
+    background: rgba(10, 10, 26, 0.95);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  /* ── Detail panel ── */
+  .detail-panel {
+    @apply absolute top-0 right-0 h-full z-20 overflow-auto;
+    width: 340px;
+    background: rgba(10, 10, 26, 0.95);
+    backdrop-filter: blur(16px);
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    animation: slideIn 0.2s ease-out;
+  }
+
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  .detail-header {
+    @apply px-5 pt-5 pb-4;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .detail-title-row {
+    @apply flex items-center justify-between mb-2;
+  }
+  .detail-kind-badge {
+    @apply text-[11px] font-semibold px-2.5 py-1 rounded-md;
+    border: 1px solid;
+  }
+  .detail-close {
+    @apply w-7 h-7 rounded-lg flex items-center justify-center text-gray-500 hover:text-white transition-colors;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .detail-name {
+    @apply text-lg font-bold text-white font-mono break-all leading-tight;
+  }
+
+  /* ── Detail cards ── */
+  .detail-cards {
+    @apply px-5 py-3 space-y-2;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .detail-card {
+    @apply flex items-start gap-3 p-3 rounded-lg;
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .detail-card.clickable {
+    @apply cursor-pointer transition-colors;
+  }
+  .detail-card.clickable:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .detail-card-dot {
+    @apply w-3 h-3 rounded-full shrink-0 mt-0.5;
+  }
+  .detail-card-content {
+    @apply flex flex-col min-w-0;
+  }
+  .detail-card-label {
+    @apply text-[10px] text-gray-500 uppercase tracking-wider;
+  }
+  .detail-card-value {
+    @apply text-xs font-medium text-gray-200;
+  }
+  .detail-card-sub {
+    @apply text-[10px] text-gray-500 truncate;
+  }
+
+  /* ── Learn link ── */
+  .learn-link {
+    @apply flex items-center gap-3 mx-5 my-3 p-3 rounded-lg transition-colors;
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+  }
+  .learn-link:hover {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+  .learn-link-title {
+    @apply text-xs font-semibold text-indigo-300;
+  }
+  .learn-link-sub {
+    @apply text-[10px] text-indigo-400/60;
+  }
+
+  /* ── Connections ── */
+  .detail-connections {
+    @apply px-5 py-3;
+  }
+  .conn-group {
+    @apply mb-4;
+  }
+  .conn-label {
+    @apply flex items-center gap-1.5 text-[11px] font-semibold text-gray-400 mb-1.5;
+  }
+  .conn-edge-dot {
+    @apply w-2 h-2 rounded-full shrink-0;
+  }
+  .conn-count {
+    @apply text-gray-600 font-normal;
+  }
+  .conn-item {
+    @apply flex items-center gap-2 w-full py-1.5 px-2 rounded transition-colors text-left;
+    cursor: pointer;
+  }
+  .conn-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .conn-node-dot {
+    @apply w-2 h-2 rounded-full shrink-0;
+  }
+  .conn-node-name {
+    @apply text-xs font-mono text-gray-300 truncate flex-1;
+  }
+  .conn-node-kind {
+    @apply text-[10px] text-gray-600 shrink-0;
+  }
+
+  /* ── Guidance bar ── */
+  .guidance-bar {
+    @apply absolute bottom-4 left-1/2 z-10 px-5 py-2.5 rounded-xl;
+    transform: translateX(-50%);
+    background: rgba(10, 10, 26, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    max-width: 700px;
+  }
+  .guidance-content {
+    @apply flex items-center gap-2 text-[11px] text-gray-400;
+  }
+  .guidance-content strong {
+    @apply text-gray-300 font-semibold;
+  }
+  .guidance-icon {
+    @apply text-indigo-400 shrink-0;
+  }
+</style>

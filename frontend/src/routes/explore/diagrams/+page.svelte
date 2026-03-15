@@ -1,26 +1,21 @@
 <script lang="ts">
   import { fetchCommunities, fetchProcesses } from '$lib/api';
   import type { Community, ProcessFlow } from '$lib/types';
+  import { Layers, ChevronDown, ChevronRight, ArrowLeft, Workflow } from 'lucide-svelte';
 
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let communities = $state<Community[]>([]);
   let processes = $state<ProcessFlow[]>([]);
   let expandedProcesses = $state<Set<number>>(new Set());
 
   function formatLabel(label: string): string {
-    return label
-      .replace(/^cluster_/, '')
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return label.replace(/^cluster_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   function toggleProcess(id: number) {
     const next = new Set(expandedProcesses);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
+    if (next.has(id)) next.delete(id); else next.add(id);
     expandedProcesses = next;
   }
 
@@ -29,117 +24,133 @@
       communities = c.sort((a, b) => b.member_count - a.member_count);
       processes = p;
       loading = false;
+    }).catch((e) => {
+      error = `Failed to load diagram data: ${e}`;
+      loading = false;
     });
   }
 </script>
 
-<div class="p-6 max-w-5xl mx-auto">
-  <div class="flex items-center gap-3 mb-6">
-    <a href="/explore" class="text-gray-500 hover:text-gray-300 transition-colors">&larr;</a>
-    <h1 class="text-2xl font-bold">Diagrams</h1>
+<div class="p-8 max-w-5xl mx-auto">
+  <div class="flex items-center gap-3 mb-8">
+    <a href="/explore" class="w-8 h-8 rounded-lg bg-[var(--surface-2)] flex items-center justify-center text-[var(--c-text-muted)] hover:text-[var(--c-text-primary)] hover:bg-[var(--surface-3)] transition-all">
+      <ArrowLeft size={16} />
+    </a>
+    <div class="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center">
+      <Layers size={20} class="text-rose-400" />
+    </div>
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">Diagrams</h1>
+      <p class="text-sm text-[var(--c-text-secondary)]">Architecture modules and process flows</p>
+    </div>
   </div>
 
   {#if loading}
-    <p class="text-gray-400 animate-pulse">Loading...</p>
+    <div class="space-y-4">
+      {#each [1, 2, 3] as _}
+        <div class="h-20 bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl animate-pulse"></div>
+      {/each}
+    </div>
+  {:else if error}
+    <div class="text-center py-20 bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl">
+      <Layers size={40} class="text-red-400 mx-auto mb-4" />
+      <p class="text-red-400 text-lg font-medium mb-2">Error loading diagrams</p>
+      <p class="text-[var(--c-text-muted)] text-sm">{error}</p>
+    </div>
   {:else if communities.length === 0 && processes.length === 0}
-    <div class="text-center py-16">
-      <p class="text-gray-400 text-lg mb-2">No diagram data</p>
-      <p class="text-gray-500">Run <code class="text-indigo-400 font-mono">codeilus analyze ./repo</code> first</p>
+    <div class="text-center py-20 bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl">
+      <Layers size={40} class="text-[var(--c-text-muted)] mx-auto mb-4" />
+      <p class="text-[var(--c-text-secondary)] text-lg font-medium mb-2">No diagram data</p>
+      <p class="text-[var(--c-text-muted)] text-sm">Run <code class="text-[var(--c-accent)] font-mono text-xs bg-[var(--c-accent)]/10 px-1.5 py-0.5 rounded">codeilus analyze ./repo</code> first</p>
     </div>
   {:else}
-    <!-- Architecture Overview -->
     {#if communities.length > 0}
-      <h2 class="text-lg font-semibold mb-3">Architecture — {communities.length} Modules</h2>
-      <p class="text-sm text-gray-400 mb-4">Functional areas detected by community analysis. Higher cohesion means tighter internal coupling.</p>
+      <section class="mb-10">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-[var(--c-text-muted)] mb-4">Architecture — {communities.length} Modules</h2>
+        <p class="text-sm text-[var(--c-text-secondary)] mb-5">Functional areas detected by community analysis. Higher cohesion means tighter internal coupling.</p>
 
-      <!-- Top modules bar chart -->
-      <div class="mb-6 bg-gray-900 border border-gray-800 rounded-lg p-4">
-        {#each communities.slice(0, 10) as community}
-          {@const maxCount = communities[0].member_count}
-          <div class="flex items-center gap-3 mb-2 last:mb-0">
-            <span class="text-sm text-gray-300 w-40 truncate" title={formatLabel(community.label)}>{formatLabel(community.label)}</span>
-            <div class="flex-1 bg-gray-800 rounded-full h-4 overflow-hidden">
-              <div
-                class="h-full rounded-full bg-indigo-500 flex items-center justify-end pr-2"
-                style="width: {Math.max(5, (community.member_count / maxCount) * 100)}%"
-              >
-                <span class="text-[10px] text-white font-mono">{community.member_count}</span>
-              </div>
-            </div>
-            <span class="text-xs text-gray-500 w-12 text-right">{(community.cohesion * 100).toFixed(0)}%</span>
-          </div>
-        {/each}
-      </div>
-
-      <!-- Community grid -->
-      <div class="grid grid-cols-2 gap-4 mb-8">
-        {#each communities as community}
-          <div class="card">
-            <h3 class="text-base font-semibold text-gray-100 mb-2">{formatLabel(community.label)}</h3>
-            <div class="flex items-center gap-3 mb-2">
-              <span class="text-sm text-gray-400">{community.member_count} symbols</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-gray-500">Cohesion</span>
-              <div class="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
+        <!-- Bar chart -->
+        <div class="bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl p-5 mb-6">
+          {#each communities.slice(0, 12) as community}
+            {@const maxCount = communities[0].member_count}
+            <div class="flex items-center gap-3 mb-2.5 last:mb-0">
+              <span class="text-sm text-[var(--c-text-secondary)] w-36 truncate font-medium" title={formatLabel(community.label)}>{formatLabel(community.label)}</span>
+              <div class="flex-1 bg-[var(--surface-3)] rounded-full h-5 overflow-hidden">
                 <div
-                  class="h-full rounded-full bg-indigo-500"
-                  style="width: {Math.min(community.cohesion * 100, 100)}%"
-                ></div>
+                  class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-indigo-400 flex items-center justify-end pr-2"
+                  style="width: {Math.max(8, (community.member_count / maxCount) * 100)}%"
+                >
+                  <span class="text-[10px] font-mono text-white/80">{community.member_count}</span>
+                </div>
               </div>
-              <span class="text-xs text-gray-400">{(community.cohesion * 100).toFixed(0)}%</span>
+              <span class="text-xs text-[var(--c-text-muted)] w-10 text-right font-mono">{(community.cohesion * 100).toFixed(0)}%</span>
             </div>
-          </div>
-        {/each}
-      </div>
+          {/each}
+        </div>
+
+        <!-- Grid -->
+        <div class="grid grid-cols-2 gap-3">
+          {#each communities as community}
+            <div class="p-4 bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl hover:border-[var(--c-border-hover)] transition-colors">
+              <h3 class="text-sm font-semibold text-[var(--c-text-primary)] mb-2">{formatLabel(community.label)}</h3>
+              <div class="flex items-center gap-3 mb-2.5">
+                <span class="text-xs text-[var(--c-text-muted)]">{community.member_count} symbols</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-[var(--c-text-muted)] uppercase tracking-wider">Cohesion</span>
+                <div class="flex-1 bg-[var(--surface-3)] rounded-full h-1.5 overflow-hidden">
+                  <div class="h-full rounded-full bg-[var(--c-accent)]" style="width: {Math.min(community.cohesion * 100, 100)}%"></div>
+                </div>
+                <span class="text-[11px] text-[var(--c-text-muted)] font-mono">{(community.cohesion * 100).toFixed(0)}%</span>
+              </div>
+            </div>
+          {/each}
+        </div>
+      </section>
     {/if}
 
-    <!-- Processes -->
     {#if processes.length > 0}
-      <h2 class="text-lg font-semibold mb-3">Process Flows — {processes.length} detected</h2>
-      <p class="text-sm text-gray-400 mb-4">Execution paths through the codebase, starting from entry points.</p>
-      <div class="space-y-3">
-        {#each processes as process}
-          <div class="card">
-            <button
-              class="w-full text-left flex items-center gap-2"
-              onclick={() => toggleProcess(process.id)}
-            >
-              <span class="text-gray-500 text-xs">{expandedProcesses.has(process.id) ? '\u25BE' : '\u25B8'}</span>
-              <h3 class="text-base font-semibold text-gray-100">{formatLabel(process.name)}</h3>
-              <span class="text-xs text-gray-500 ml-auto">{process.steps.length} steps</span>
-            </button>
+      <section>
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-[var(--c-text-muted)] mb-4">Process Flows — {processes.length} detected</h2>
+        <p class="text-sm text-[var(--c-text-secondary)] mb-5">Execution paths through the codebase, starting from entry points.</p>
+        <div class="space-y-3">
+          {#each processes as process}
+            {@const isExpanded = expandedProcesses.has(process.id)}
+            <div class="bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl hover:border-[var(--c-border-hover)] transition-colors {isExpanded ? 'ring-1 ring-[var(--c-accent)]/20 border-indigo-500/30' : ''}">
+              <button class="w-full text-left p-4 flex items-center gap-3" onclick={() => toggleProcess(process.id)}>
+                <div class="w-8 h-8 rounded-lg bg-[var(--surface-2)] flex items-center justify-center text-[var(--c-text-muted)]">
+                  <Workflow size={16} />
+                </div>
+                <h3 class="text-sm font-semibold text-[var(--c-text-primary)] flex-1">{formatLabel(process.name)}</h3>
+                <span class="text-xs text-[var(--c-text-muted)] mr-2">{process.steps.length} steps</span>
+                {#if isExpanded}
+                  <ChevronDown size={16} class="text-[var(--c-text-muted)]" />
+                {:else}
+                  <ChevronRight size={16} class="text-[var(--c-text-muted)]" />
+                {/if}
+              </button>
 
-            {#if expandedProcesses.has(process.id)}
-              <div class="mt-3 ml-6 border-l-2 border-indigo-500/30 pl-4 space-y-3">
-                {#each process.steps.sort((a, b) => a.order - b.order) as step, idx}
-                  <div class="flex items-start gap-3">
-                    <div class="w-6 h-6 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
-                      {idx + 1}
-                    </div>
-                    <div>
-                      <div class="text-sm font-mono text-indigo-400">{step.symbol_name}()</div>
-                      {#if step.description}
-                        <div class="text-xs text-gray-400 mt-0.5">{step.description}</div>
-                      {/if}
-                    </div>
-                    {#if idx < process.steps.length - 1}
-                      <span class="text-gray-600 ml-auto">&darr;</span>
-                    {/if}
+              {#if isExpanded}
+                <div class="px-4 pb-4">
+                  <div class="ml-4 border-l-2 border-indigo-500/20 pl-5 space-y-4">
+                    {#each process.steps.sort((a, b) => a.order - b.order) as step, idx}
+                      <div class="relative flex items-start gap-3">
+                        <div class="absolute -left-[27px] w-3 h-3 rounded-full bg-[var(--c-accent)]/20 border-2 border-indigo-500"></div>
+                        <div>
+                          <div class="text-sm font-mono text-[var(--c-accent)] font-medium">{step.symbol_name}()</div>
+                          {#if step.description}
+                            <div class="text-xs text-[var(--c-text-muted)] mt-0.5">{step.description}</div>
+                          {/if}
+                        </div>
+                      </div>
+                    {/each}
                   </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/each}
-      </div>
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </section>
     {/if}
   {/if}
 </div>
-
-<style>
-  @reference "tailwindcss";
-  .card {
-    @apply p-4 bg-gray-900 border border-gray-800 rounded-lg hover:border-indigo-500/50 transition-colors;
-  }
-</style>

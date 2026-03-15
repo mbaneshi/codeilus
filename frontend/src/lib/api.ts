@@ -4,6 +4,9 @@ import type {
   GraphResponse,
   Community,
   ProcessFlow,
+  NarrativeResponse,
+  Chapter,
+  SourceResponse,
 } from '$lib/types';
 
 const BASE = '/api/v1';
@@ -64,8 +67,75 @@ export async function fetchProcesses(): Promise<ProcessFlow[]> {
   return get(`${BASE}/processes`, []);
 }
 
+export async function fetchNarrative(kind: string): Promise<NarrativeResponse | null> {
+  return get(`${BASE}/narratives/${kind}`, null);
+}
+
+export async function fetchNarrativeByTarget(kind: string, targetId: number): Promise<NarrativeResponse | null> {
+  return get(`${BASE}/narratives/${kind}/${targetId}`, null);
+}
+
+export async function fetchChapters(): Promise<Chapter[]> {
+  return get(`${BASE}/chapters`, []);
+}
+
+export async function fetchChapter(id: number): Promise<Chapter | null> {
+  return get(`${BASE}/chapters/${id}`, null);
+}
+
+export async function fetchFileSource(fileId: number, start?: number, end?: number): Promise<SourceResponse | null> {
+  const params = new URLSearchParams();
+  if (start !== undefined) params.set('start', String(start));
+  if (end !== undefined) params.set('end', String(end));
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return get(`${BASE}/files/${fileId}/source${qs}`, null);
+}
+
 export async function fetchLlmStatus(): Promise<{ available: boolean }> {
   return get(`${BASE}/llm/status`, { available: false });
+}
+
+export async function fetchProgress(): Promise<import('$lib/types').Progress[]> {
+  return get(`${BASE}/progress`, []);
+}
+
+export async function fetchQuiz(chapterId: number): Promise<import('$lib/types').QuizQuestion[]> {
+  return get(`${BASE}/chapters/${chapterId}/quiz`, []);
+}
+
+export async function submitQuizAnswer(questionId: number, answer: string): Promise<{ correct: boolean; xp_earned: number }> {
+  try {
+    const res = await fetch(`${BASE}/quiz/${questionId}/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer }),
+    });
+    if (!res.ok) return { correct: false, xp_earned: 0 };
+    return await res.json();
+  } catch {
+    return { correct: false, xp_earned: 0 };
+  }
+}
+
+export async function markSectionComplete(chapterId: number, sectionId: number): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/chapters/${chapterId}/sections/${sectionId}/complete`, {
+      method: 'POST',
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchLearnerStats(): Promise<import('$lib/types').LearnerStats> {
+  return get(`${BASE}/learner/stats`, {
+    total_xp: 0,
+    streak_days: 0,
+    last_active: '',
+    chapters_completed: 0,
+    badges: [],
+  });
 }
 
 export async function askQuestion(

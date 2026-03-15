@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fetchFiles } from '$lib/api';
   import type { FileRow } from '$lib/types';
+  import { BarChart3, ArrowLeft } from 'lucide-svelte';
 
   const LANG_COLORS: Record<string, string> = {
     rust: '#dea584',
@@ -16,6 +17,7 @@
   };
 
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let files = $state<FileRow[]>([]);
   let sortKey = $state<'sloc' | 'path'>('sloc');
   let sortAsc = $state(false);
@@ -33,6 +35,7 @@
       .sort((a, b) => b.sloc - a.sloc);
   });
   let uniqueLanguages = $derived(new Set(files.map((f) => f.language).filter(Boolean)).size);
+  let avgSloc = $derived(totalFiles > 0 ? Math.round(totalSloc / totalFiles) : 0);
 
   let sortedFiles = $derived(() => {
     const sorted = [...files];
@@ -62,18 +65,38 @@
     fetchFiles().then((data) => {
       files = data;
       loading = false;
+    }).catch((e) => {
+      error = `Failed to load files: ${e}`;
+      loading = false;
     });
   }
 </script>
 
 <div class="p-6 max-w-5xl mx-auto">
-  <div class="flex items-center gap-3 mb-6">
-    <a href="/explore" class="text-gray-500 hover:text-gray-300 transition-colors">&larr;</a>
-    <h1 class="text-2xl font-bold">Metrics Dashboard</h1>
+  <div class="flex items-center gap-3 mb-8">
+    <a href="/explore" class="w-8 h-8 rounded-lg bg-[var(--surface-2)] flex items-center justify-center text-[var(--c-text-muted)] hover:text-[var(--c-text-primary)] hover:bg-[var(--surface-3)] transition-all">
+      <ArrowLeft size={16} />
+    </a>
+    <div class="w-10 h-10 rounded-xl bg-sky-500/10 flex items-center justify-center">
+      <BarChart3 size={20} class="text-sky-400" />
+    </div>
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">Metrics Dashboard</h1>
+      <p class="text-sm text-[var(--c-text-secondary)]">SLOC, language distribution, and file analysis</p>
+    </div>
   </div>
 
   {#if loading}
-    <p class="text-gray-400 animate-pulse">Loading...</p>
+    <div class="space-y-4">
+      {#each [1, 2, 3] as _}
+        <div class="h-20 bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl animate-pulse"></div>
+      {/each}
+    </div>
+  {:else if error}
+    <div class="text-center py-16">
+      <p class="text-red-400 text-lg mb-2">Error loading metrics</p>
+      <p class="text-[var(--c-text-muted)] text-sm">{error}</p>
+    </div>
   {:else if files.length === 0}
     <div class="text-center py-16">
       <p class="text-gray-400 text-lg mb-2">No metrics available</p>
@@ -81,18 +104,22 @@
     </div>
   {:else}
     <!-- Stats row -->
-    <div class="grid grid-cols-3 gap-4 mb-8">
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
       <div class="stat-card">
         <div class="text-3xl font-bold text-indigo-400">{totalFiles}</div>
-        <div class="text-sm text-gray-400">Total Files</div>
+        <div class="text-sm text-[var(--c-text-muted)]">Total Files</div>
       </div>
       <div class="stat-card">
-        <div class="text-3xl font-bold text-indigo-400">{totalSloc.toLocaleString()}</div>
-        <div class="text-sm text-gray-400">Total SLOC</div>
+        <div class="text-3xl font-bold text-teal-400">{totalSloc.toLocaleString()}</div>
+        <div class="text-sm text-[var(--c-text-muted)]">Total SLOC</div>
       </div>
       <div class="stat-card">
-        <div class="text-3xl font-bold text-indigo-400">{uniqueLanguages}</div>
-        <div class="text-sm text-gray-400">Languages</div>
+        <div class="text-3xl font-bold text-amber-400">{avgSloc}</div>
+        <div class="text-sm text-[var(--c-text-muted)]">Avg SLOC/File</div>
+      </div>
+      <div class="stat-card">
+        <div class="text-3xl font-bold text-pink-400">{uniqueLanguages}</div>
+        <div class="text-sm text-[var(--c-text-muted)]">Languages</div>
       </div>
     </div>
 
@@ -101,44 +128,44 @@
     <div class="space-y-2 mb-8">
       {#each languages() as { lang, sloc, pct }}
         <div class="flex items-center gap-3">
-          <span class="w-24 text-sm text-gray-300 truncate text-right">{lang}</span>
-          <div class="flex-1 bg-gray-800 rounded-full h-5 overflow-hidden">
+          <span class="w-24 text-sm text-[var(--c-text-secondary)] truncate text-right">{lang}</span>
+          <div class="flex-1 bg-[var(--surface-3)] rounded-full h-5 overflow-hidden">
             <div
               class="h-full rounded-full transition-all"
               style="width: {Math.max(pct, 1)}%; background: {langColor(lang)}"
             ></div>
           </div>
-          <span class="text-sm text-gray-400 w-20 text-right">{pct.toFixed(1)}%</span>
-          <span class="text-xs text-gray-500 w-16 text-right">{sloc.toLocaleString()}</span>
+          <span class="text-sm text-[var(--c-text-muted)] w-20 text-right">{pct.toFixed(1)}%</span>
+          <span class="text-xs text-[var(--c-text-muted)] w-16 text-right">{sloc.toLocaleString()}</span>
         </div>
       {/each}
     </div>
 
     <!-- Top files table -->
     <h2 class="text-lg font-semibold mb-3">Top Files by SLOC</h2>
-    <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <div class="bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl overflow-hidden">
       <table class="w-full text-sm">
         <thead>
-          <tr class="border-b border-gray-800">
-            <th class="text-left p-3 text-gray-400 cursor-pointer hover:text-gray-200" onclick={() => toggleSort('path')}>
+          <tr class="border-b border-[var(--c-border)]">
+            <th class="text-left p-3 text-[var(--c-text-muted)] cursor-pointer hover:text-[var(--c-text-primary)] transition-colors" onclick={() => toggleSort('path')}>
               Path {sortKey === 'path' ? (sortAsc ? '\u2191' : '\u2193') : ''}
             </th>
-            <th class="text-left p-3 text-gray-400 w-28">Language</th>
-            <th class="text-right p-3 text-gray-400 w-24 cursor-pointer hover:text-gray-200" onclick={() => toggleSort('sloc')}>
+            <th class="text-left p-3 text-[var(--c-text-muted)] w-28">Language</th>
+            <th class="text-right p-3 text-[var(--c-text-muted)] w-24 cursor-pointer hover:text-[var(--c-text-primary)] transition-colors" onclick={() => toggleSort('sloc')}>
               SLOC {sortKey === 'sloc' ? (sortAsc ? '\u2191' : '\u2193') : ''}
             </th>
           </tr>
         </thead>
         <tbody>
           {#each sortedFiles() as file}
-            <tr class="border-b border-gray-800/50 hover:bg-gray-800/50">
-              <td class="p-3 font-mono text-gray-200 truncate max-w-md" title={file.path}>{file.path}</td>
+            <tr class="border-b border-[var(--c-border)]/50 hover:bg-[var(--surface-2)]">
+              <td class="p-3 font-mono text-[var(--c-text-primary)] truncate max-w-md" title={file.path}>{file.path}</td>
               <td class="p-3">
                 {#if file.language}
                   <span class="text-xs px-2 py-0.5 rounded" style="background: {langColor(file.language)}20; color: {langColor(file.language)}">{file.language}</span>
                 {/if}
               </td>
-              <td class="p-3 text-right text-gray-300 font-mono">{file.sloc.toLocaleString()}</td>
+              <td class="p-3 text-right text-[var(--c-text-secondary)] font-mono">{file.sloc.toLocaleString()}</td>
             </tr>
           {/each}
         </tbody>
@@ -150,6 +177,6 @@
 <style>
   @reference "tailwindcss";
   .stat-card {
-    @apply p-4 bg-gray-900 border border-gray-800 rounded-lg text-center;
+    @apply p-4 bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl text-center;
   }
 </style>

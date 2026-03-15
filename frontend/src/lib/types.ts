@@ -62,3 +62,72 @@ export interface ProcessFlow {
   entry_symbol_id: number;
   steps: ProcessStep[];
 }
+
+export interface NarrativeResponse {
+  id: number;
+  kind: string;
+  target_id: number | null;
+  content: string;
+  generated_at: string;
+}
+
+export interface ChapterSection {
+  id: number;
+  title: string;
+  kind: string;
+  content: string;
+}
+
+export interface SourceLine {
+  number: number;
+  content: string;
+}
+
+export interface SourceResponse {
+  path: string;
+  language: string | null;
+  lines: SourceLine[];
+  total_lines: number;
+}
+
+export interface Chapter {
+  id: number;
+  order_index: number;
+  title: string;
+  description: string;
+  community_id: number | null;
+  difficulty: string;
+  sections: ChapterSection[];
+  narrative: string | null;
+}
+
+export interface Progress {
+  chapter_id: number;
+  section_id: number;
+  completed: boolean;
+  completed_at: string | null;
+}
+
+export interface QuizQuestion {
+  id: number;
+  chapter_id: number;
+  question: string;
+  options: string[];
+  kind: string;
+}
+
+export interface Badge {
+  id: number;
+  name: string;
+  description: string;
+  icon: string;
+  earned_at: string;
+}
+
+export interface LearnerStats {
+  total_xp: number;
+  streak_days: number;
+  last_active: string;
+  chapters_completed: number;
+  badges: Badge[];
+}
