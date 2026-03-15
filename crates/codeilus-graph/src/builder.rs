@@ -158,32 +158,47 @@ impl GraphBuilder {
     }
 }
 
-/// Label communities semantically using TF-IDF on symbol names within each community.
+/// Label communities semantically by analyzing symbol names and kinds.
+///
+/// Strategy:
+/// 1. Find the longest common prefix among symbol names (e.g., "http" from http_get, http_post)
+/// 2. Use TF-IDF on tokenized symbol names to find distinctive keywords
+/// 3. Incorporate the dominant symbol kind (e.g., "classes" vs "functions")
+/// 4. Combine prefix + top keyword + kind qualifier into a descriptive label
 fn label_communities_semantic(
     graph: &DiGraph<GraphNode, GraphEdge>,
     communities: &mut [Community],
     node_index: &HashMap<SymbolId, NodeIndex>,
 ) {
-    // Collect symbol names per community for TF-IDF
-    let community_names: Vec<Vec<String>> = communities
+    // Collect symbol info per community: (name, kind)
+    let community_info: Vec<Vec<(String, String)>> = communities
         .iter()
         .map(|c| {
             c.members
                 .iter()
-                .filter_map(|sid| node_index.get(sid).map(|&idx| graph[idx].name.clone()))
+                .filter_map(|sid| {
+                    node_index.get(sid).map(|&idx| {
+                        let node = &graph[idx];
+                        (node.name.clone(), node.kind.clone())
+                    })
+                })
                 .collect()
         })
         .collect();
 
-    let n_communities = community_names.len();
+    let n_communities = community_info.len();
     if n_communities == 0 {
         return;
     }
 
     // Tokenize all names per community
-    let community_tokens: Vec<Vec<String>> = community_names
+    let community_tokens: Vec<Vec<String>> = community_info
         .iter()
-        .map(|names| names.iter().flat_map(|n| tokenize_name(n)).collect())
+        .map(|info| {
+            info.iter()
+                .flat_map(|(name, _)| tokenize_name(name))
+                .collect()
+        })
         .collect();
 
     // Document frequency: how many communities contain each token
@@ -200,6 +215,8 @@ fn label_communities_semantic(
         "new", "get", "set", "run", "self", "impl", "pub", "fn", "let", "mut",
         "str", "string", "vec", "option", "result", "default", "from", "into",
         "test", "tests", "mod", "use", "type", "id", "name", "data", "value",
+        "init", "create", "make", "build", "with", "for", "the", "and", "err",
+        "error", "handle", "handler", "process", "main",
     ]
     .iter()
     .copied()
@@ -207,13 +224,23 @@ fn label_communities_semantic(
 
     // Compute TF-IDF and pick best label per community
     for (i, community) in communities.iter_mut().enumerate() {
+        if community.label == "misc" {
+            continue; // Keep "misc" label for isolated symbols
+        }
+
+        let info = &community_info[i];
         let tokens = &community_tokens[i];
+
         if tokens.is_empty() {
             community.label = format!("group_{}", i + 1);
             continue;
         }
 
-        // Term frequency
+        // Strategy 1: Find common prefix among symbol names
+        let names_refs: Vec<&str> = info.iter().map(|(n, _)| n.as_str()).collect();
+        let common_prefix = find_common_prefix(&names_refs);
+
+        // Strategy 2: TF-IDF for distinctive keywords
         let mut tf: HashMap<String, usize> = HashMap::new();
         for token in tokens {
             *tf.entry(token.clone()).or_default() += 1;
@@ -223,21 +250,80 @@ fn label_communities_semantic(
         let mut scores: Vec<(String, f64)> = tf
             .iter()
             .filter(|(term, _)| !stop_words.contains(term.as_str()))
+            .filter(|(term, _)| term.len() >= 3)
             .map(|(term, &count)| {
                 let tf_val = count as f64 / total;
                 let df_val = df.get(term).copied().unwrap_or(1) as f64;
                 let idf_val = (n_communities as f64 / df_val).ln() + 1.0;
-                (term.clone(), tf_val * idf_val)
+                // Boost tokens that match the common prefix
+                let prefix_boost =
+                    if common_prefix.as_ref().is_some_and(|p| p == term) {
+                        1.5
+                    } else {
+                        1.0
+                    };
+                (term.clone(), tf_val * idf_val * prefix_boost)
             })
             .collect();
 
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Take top 2 keywords, join with underscore
-        let label = match scores.len() {
-            0 => format!("group_{}", i + 1),
-            1 => scores[0].0.clone(),
-            _ => format!("{}_{}", scores[0].0, scores[1].0),
+        // Strategy 3: Dominant symbol kind for qualification
+        let mut kind_counts: HashMap<&str, usize> = HashMap::new();
+        for (_, kind) in info {
+            *kind_counts.entry(kind.as_str()).or_default() += 1;
+        }
+        let dominant_kind = kind_counts
+            .iter()
+            .max_by_key(|(_, c)| **c)
+            .map(|(k, _)| *k);
+        let kind_suffix = match dominant_kind {
+            Some("Class") => Some("classes"),
+            Some("Interface") => Some("interfaces"),
+            Some("Struct") => Some("types"),
+            Some("Enum") => Some("enums"),
+            Some("Trait") => Some("traits"),
+            _ => None, // Functions are the default, no suffix needed
+        };
+
+        // Build the label: prefer common prefix, fall back to TF-IDF keywords
+        let base_label = if let Some(ref prefix) = common_prefix {
+            if scores.first().is_none_or(|(top, _)| top == prefix) {
+                prefix.clone()
+            } else {
+                let top = &scores[0].0;
+                if prefix == top {
+                    prefix.clone()
+                } else {
+                    format!("{}_{}", prefix, top)
+                }
+            }
+        } else {
+            // No common prefix: use top 2 TF-IDF keywords
+            match scores.len() {
+                0 => format!("group_{}", i + 1),
+                1 => scores[0].0.clone(),
+                _ => {
+                    if scores[0].0 == scores[1].0 {
+                        scores[0].0.clone()
+                    } else {
+                        format!("{}_{}", scores[0].0, scores[1].0)
+                    }
+                }
+            }
+        };
+
+        // Append kind suffix if the community is dominated by non-function kinds
+        let label = if let Some(suffix) = kind_suffix {
+            if !base_label.contains(suffix)
+                && !base_label.contains(&suffix[..suffix.len() - 1])
+            {
+                format!("{}_{}", base_label, suffix)
+            } else {
+                base_label
+            }
+        } else {
+            base_label
         };
 
         community.label = label;
@@ -251,6 +337,42 @@ fn label_communities_semantic(
             community.label = format!("{}_{}", community.label, *count + 1);
         }
         *count += 1;
+    }
+}
+
+/// Find the longest common prefix token among a set of symbol names.
+/// Returns the prefix if at least 60% of names share it and it has >= 3 chars.
+fn find_common_prefix(names: &[&str]) -> Option<String> {
+    if names.len() < 2 {
+        return None;
+    }
+
+    // Tokenize each name and look at the first token
+    let first_tokens: Vec<Vec<String>> = names.iter().map(|n| tokenize_name(n)).collect();
+    let first_token_refs: Vec<&str> = first_tokens
+        .iter()
+        .filter_map(|t| t.first().map(|s| s.as_str()))
+        .collect();
+
+    if first_token_refs.is_empty() {
+        return None;
+    }
+
+    // Count how often each first token appears
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for token in &first_token_refs {
+        *counts.entry(token).or_default() += 1;
+    }
+
+    // Find most common first token
+    let (best_token, best_count) = counts.into_iter().max_by_key(|(_, c)| *c)?;
+
+    // Require at least 60% of names to share this prefix
+    let threshold = (names.len() as f64 * 0.6) as usize;
+    if best_count >= threshold && best_token.len() >= 3 {
+        Some(best_token.to_string())
+    } else {
+        None
     }
 }
 

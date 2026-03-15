@@ -26,21 +26,66 @@ pub fn generate(graph: &KnowledgeGraph) -> CodeilusResult<Curriculum> {
 
     // Filter: only create chapters for communities with enough members to be meaningful
     let min_community_size = 5;
+    let max_community_chapters = 15;
 
-    for (order, community_id) in sorted_communities.iter().enumerate() {
-        let community = graph
-            .communities
-            .iter()
-            .find(|c| c.id.0 == *community_id);
-        let community = match community {
+    // Partition communities: large enough for their own chapter vs. too small / overflow
+    let mut main_community_ids: Vec<i64> = Vec::new();
+    let mut supporting_community_ids: Vec<i64> = Vec::new();
+
+    for community_id in &sorted_communities {
+        let community = match graph.communities.iter().find(|c| c.id.0 == *community_id) {
             Some(c) => c,
             None => continue,
         };
 
-        // Skip tiny communities — they don't warrant their own chapter
-        if community.members.len() < min_community_size {
+        if community.members.len() < min_community_size || community.label == "misc" {
+            supporting_community_ids.push(*community_id);
+        } else {
+            main_community_ids.push(*community_id);
+        }
+    }
+
+    // If too many main communities, demote the smallest ones to supporting
+    if main_community_ids.len() > max_community_chapters {
+        // Sort by member count descending — keep the largest ones
+        let mut by_size: Vec<(i64, usize)> = main_community_ids
+            .iter()
+            .filter_map(|cid| {
+                graph
+                    .communities
+                    .iter()
+                    .find(|c| c.id.0 == *cid)
+                    .map(|c| (*cid, c.members.len()))
+            })
+            .collect();
+        by_size.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let keep: HashSet<i64> = by_size
+            .iter()
+            .take(max_community_chapters)
+            .map(|(cid, _)| *cid)
+            .collect();
+        let overflow: Vec<i64> = main_community_ids
+            .iter()
+            .filter(|cid| !keep.contains(cid))
+            .copied()
+            .collect();
+
+        main_community_ids.retain(|cid| keep.contains(cid));
+        supporting_community_ids.extend(overflow);
+    }
+
+    let main_set: HashSet<i64> = main_community_ids.iter().copied().collect();
+
+    for (order, community_id) in sorted_communities.iter().enumerate() {
+        if !main_set.contains(community_id) {
             continue;
         }
+
+        let community = match graph.communities.iter().find(|c| c.id.0 == *community_id) {
+            Some(c) => c,
+            None => continue,
+        };
 
         let chapter_id = ChapterId(chapter_counter);
         chapter_counter += 1;
@@ -67,6 +112,18 @@ pub fn generate(graph: &KnowledgeGraph) -> CodeilusResult<Curriculum> {
 
         community_to_chapter.insert(*community_id, chapter_id);
         chapters.push(chapter);
+    }
+
+    // Create a single "Supporting Modules" summary chapter for small/overflow communities
+    if !supporting_community_ids.is_empty() {
+        let supporting_chapter = make_supporting_chapter(
+            ChapterId(chapter_counter),
+            chapters.len(),
+            &supporting_community_ids,
+            graph,
+        );
+        chapter_counter += 1;
+        chapters.push(supporting_chapter);
     }
 
     // Final chapter: Putting It All Together (always last)
@@ -466,6 +523,122 @@ fn make_final_chapter(
         ],
         difficulty: Difficulty::Intermediate,
         prerequisite_ids,
+    }
+}
+
+/// Build a summary chapter for small or overflow communities that don't
+/// warrant their own dedicated chapter.
+fn make_supporting_chapter(
+    id: ChapterId,
+    order: usize,
+    community_ids: &[i64],
+    graph: &KnowledgeGraph,
+) -> Chapter {
+    let communities: Vec<&codeilus_graph::Community> = community_ids
+        .iter()
+        .filter_map(|cid| graph.communities.iter().find(|c| c.id.0 == *cid))
+        .collect();
+
+    let total_symbols: usize = communities.iter().map(|c| c.members.len()).sum();
+
+    // Overview
+    let overview = {
+        let mut lines = vec![format!(
+            "This chapter covers **{}** smaller modules containing a total of \
+             **{}** symbols. Each module is too small for a dedicated chapter \
+             but still plays a role in the codebase.",
+            communities.len(),
+            total_symbols,
+        )];
+        lines.push("\n### Modules".to_string());
+        for comm in &communities {
+            lines.push(format!(
+                "- **{}** — {} symbols (cohesion {:.0}%)",
+                comm.label,
+                comm.members.len(),
+                comm.cohesion * 100.0
+            ));
+        }
+        lines.join("\n")
+    };
+
+    // Key Concepts: list top symbols from each supporting community
+    let key_concepts = {
+        let mut lines = vec!["### Notable Symbols".to_string()];
+        for comm in &communities {
+            let symbols: Vec<String> = comm
+                .members
+                .iter()
+                .take(5)
+                .filter_map(|sid| {
+                    graph
+                        .node_index
+                        .get(sid)
+                        .map(|idx| {
+                            let node = &graph.graph[*idx];
+                            format!("{} ({})", node.name, node.kind)
+                        })
+                })
+                .collect();
+            if !symbols.is_empty() {
+                lines.push(format!("- **{}**: {}", comm.label, symbols.join(", ")));
+            }
+        }
+        lines.join("\n")
+    };
+
+    let diagram =
+        "See the interactive diagram for an overview of how these modules connect to the rest of the codebase."
+            .to_string();
+
+    let code_walkthrough = {
+        let mut lines = vec!["### Quick Reference".to_string()];
+        lines.push(
+            "These modules are typically utilities, helpers, or small subsystems \
+             referenced by the main modules."
+                .to_string(),
+        );
+        lines.join("\n")
+    };
+
+    let connections = {
+        let mut lines = vec!["### Connections to Main Modules".to_string()];
+        for comm in &communities {
+            let dep_ids = get_community_dependencies(graph, comm.id.0);
+            if !dep_ids.is_empty() {
+                let dep_labels: Vec<String> = dep_ids
+                    .iter()
+                    .filter_map(|did| graph.communities.iter().find(|c| c.id.0 == *did))
+                    .map(|c| c.label.clone())
+                    .collect();
+                lines.push(format!("- **{}** → {}", comm.label, dep_labels.join(", ")));
+            }
+        }
+        if lines.len() == 1 {
+            lines.push("No outgoing dependencies detected.".to_string());
+        }
+        lines.join("\n")
+    };
+
+    let quiz_content =
+        "Complete the quiz to test your understanding of the supporting modules.".to_string();
+
+    Chapter {
+        id,
+        order,
+        title: "Supporting Modules".to_string(),
+        description: "A summary of smaller utility modules, helpers, and subsystems.".to_string(),
+        community_id: None,
+        sections: vec![
+            make_section(SectionKind::Overview, overview),
+            make_section(SectionKind::KeyConcepts, key_concepts),
+            make_section(SectionKind::Diagram, diagram),
+            make_section(SectionKind::CodeWalkthrough, code_walkthrough),
+            make_section(SectionKind::Connections, connections),
+            make_section(SectionKind::Quiz, quiz_content),
+        ],
+        difficulty: Difficulty::Beginner,
+        prerequisite_ids: vec![],
     }
 }
 
