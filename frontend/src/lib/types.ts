@@ -131,3 +131,13 @@ export interface LearnerStats {
   chapters_completed: number;
   badges: Badge[];
 }
+
+export interface Annotation {
+  id: number;
+  target_type: 'node' | 'edge';
+  target_id: number;
+  content: string;
+  flagged: boolean;
+  created_at: string;
+  updated_at: string;
+}

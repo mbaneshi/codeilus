@@ -4,6 +4,7 @@
 
   let healthStatus = $state('checking...');
   let llmAvailable = $state<boolean | null>(null);
+  let llmProvider = $state('');
   let apiBase = $state('/api/v1');
   let showResetConfirm = $state(false);
 
@@ -11,6 +12,7 @@
     Promise.all([fetchHealth(), fetchLlmStatus()]).then(([health, llm]) => {
       healthStatus = health.status;
       llmAvailable = llm.available;
+      llmProvider = llm.provider || '';
     });
   }
 
@@ -53,7 +55,7 @@
       </div>
       <div class="flex items-center justify-between px-5 py-4">
         <div>
-          <div class="text-sm font-medium text-[var(--c-text-primary)]">LLM (Claude Code)</div>
+          <div class="text-sm font-medium text-[var(--c-text-primary)]">LLM Provider{llmProvider ? ` (${llmProvider})` : ''}</div>
           <div class="text-xs text-[var(--c-text-muted)] mt-0.5">Required for Ask and narrative generation</div>
         </div>
         <div class="flex items-center gap-2">

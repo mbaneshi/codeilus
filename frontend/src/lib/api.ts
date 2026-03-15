@@ -91,8 +91,8 @@ export async function fetchFileSource(fileId: number, start?: number, end?: numb
   return get(`${BASE}/files/${fileId}/source${qs}`, null);
 }
 
-export async function fetchLlmStatus(): Promise<{ available: boolean }> {
-  return get(`${BASE}/llm/status`, { available: false });
+export async function fetchLlmStatus(): Promise<{ available: boolean; provider: string }> {
+  return get(`${BASE}/llm/status`, { available: false, provider: '' });
 }
 
 export async function fetchProgress(): Promise<import('$lib/types').Progress[]> {
@@ -136,6 +136,62 @@ export async function fetchLearnerStats(): Promise<import('$lib/types').LearnerS
     chapters_completed: 0,
     badges: [],
   });
+}
+
+// ── Annotations ──
+export async function fetchAnnotations(flagged?: boolean): Promise<import('$lib/types').Annotation[]> {
+  const params = flagged ? '?flagged=true' : '';
+  return get(`${BASE}/annotations${params}`, []);
+}
+
+export async function fetchAnnotationsByTarget(targetType: string, targetId: number): Promise<import('$lib/types').Annotation[]> {
+  return get(`${BASE}/annotations/${targetType}/${targetId}`, []);
+}
+
+export async function createAnnotation(targetType: string, targetId: number, content: string): Promise<import('$lib/types').Annotation | null> {
+  try {
+    const res = await fetch(`${BASE}/annotations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_type: targetType, target_id: targetId, content }),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function updateAnnotation(id: number, content: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/annotations/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function toggleAnnotationFlag(id: number): Promise<{ flagged: boolean } | null> {
+  try {
+    const res = await fetch(`${BASE}/annotations/${id}/flag`, { method: 'POST' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteAnnotation(id: number): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/annotations/${id}`, { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function askQuestion(

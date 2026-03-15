@@ -5,9 +5,15 @@ use codeilus_core::ids::{CommunityId, FileId, SymbolId};
 use codeilus_core::types::{Confidence, EdgeKind, NarrativeKind};
 use codeilus_core::Language;
 use codeilus_graph::{Community, EntryPoint, GraphEdge, GraphNode, KnowledgeGraph};
+use codeilus_llm::ClaudeCli;
 use codeilus_narrate::{prompts, NarrativeGenerator};
 use codeilus_parse::{ParsedFile, Symbol};
 use petgraph::graph::DiGraph;
+use std::sync::Arc;
+
+fn default_llm() -> Arc<dyn codeilus_llm::LlmProvider> {
+    Arc::new(ClaudeCli::new())
+}
 
 fn empty_graph() -> KnowledgeGraph {
     KnowledgeGraph {
@@ -219,7 +225,7 @@ fn placeholder_module_summary() {
         Some(1),
     );
     assert!(
-        content.contains("core_logic"),
+        content.contains("Core Logic") || content.contains("core_logic"),
         "should mention community label: {}",
         content
     );
@@ -234,7 +240,7 @@ fn placeholder_module_summary() {
 
 #[tokio::test]
 async fn generator_placeholder_mode() {
-    let gen = NarrativeGenerator::placeholder_only();
+    let gen = NarrativeGenerator::placeholder_only(default_llm());
     let graph = graph_with_communities();
     let files = sample_parsed_files();
     let narratives = gen
@@ -249,7 +255,7 @@ async fn generator_placeholder_mode() {
 
 #[tokio::test]
 async fn generator_placeholder_mode_generates_all_kinds() {
-    let gen = NarrativeGenerator::placeholder_only();
+    let gen = NarrativeGenerator::placeholder_only(default_llm());
     let graph = graph_with_communities();
     let files = sample_parsed_files();
     let narratives = gen
@@ -283,7 +289,7 @@ async fn generator_placeholder_mode_generates_all_kinds() {
 
 #[tokio::test]
 async fn generator_all_kinds_covered() {
-    let gen = NarrativeGenerator::placeholder_only();
+    let gen = NarrativeGenerator::placeholder_only(default_llm());
     let graph = graph_with_communities();
     let files = sample_parsed_files();
     let narratives = gen
@@ -326,7 +332,7 @@ async fn generator_all_kinds_covered() {
 
 #[tokio::test]
 async fn narrative_content_not_empty() {
-    let gen = NarrativeGenerator::placeholder_only();
+    let gen = NarrativeGenerator::placeholder_only(default_llm());
     let graph = graph_with_communities();
     let files = sample_parsed_files();
     let narratives = gen
@@ -352,7 +358,7 @@ async fn narrative_content_not_empty() {
 async fn skip_llm_env_var_uses_placeholders() {
     // Set the env var for this test
     std::env::set_var("CODEILUS_SKIP_LLM", "1");
-    let gen = NarrativeGenerator::new().await;
+    let gen = NarrativeGenerator::new(default_llm()).await;
     let graph = graph_with_communities();
     let files = sample_parsed_files();
     let narratives = gen

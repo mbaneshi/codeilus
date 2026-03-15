@@ -13,6 +13,6 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+petgraph = "0.6"
 
 [dev-dependencies]
-petgraph = "0.6"
