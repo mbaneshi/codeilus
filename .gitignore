@@ -13,5 +13,9 @@ frontend/.svelte-kit/
 *.swp
 *.swo
 
+# Test results
+test-results/
+frontend/test-results/
+
 # OS
 .DS_Store
