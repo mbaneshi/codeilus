@@ -17,6 +17,8 @@ use tracing::info;
 
 use crate::state::AppState;
 
+type SymbolRow = (String, String, String, i64, i64, Option<String>);
+
 #[derive(Deserialize)]
 struct AskRequest {
     question: String,
@@ -58,7 +60,7 @@ async fn ask_stream(
     if !body.context_symbol_ids.is_empty() {
         let conn = state.db.connection();
         for sid in &body.context_symbol_ids {
-            let result: Result<(String, String, String, i64, i64, Option<String>), _> = conn.query_row(
+            let result: Result<SymbolRow, _> = conn.query_row(
                 "SELECT s.name, s.kind, f.path, s.start_line, s.end_line, s.signature
                  FROM symbols s JOIN files f ON s.file_id = f.id WHERE s.id = ?1",
                 [sid],

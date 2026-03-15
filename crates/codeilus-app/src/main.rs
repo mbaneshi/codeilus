@@ -5,7 +5,7 @@ use codeilus_core::EventBus;
 use codeilus_core::ids::SymbolId;
 use codeilus_db::{
     BatchWriter, ChapterRepo, CommunityRepo, DbPool, EdgeRepo, FileMetricsRepo, Migrator,
-    NarrativeRepo, PatternRepo, PatternRow, ProcessRepo,
+    NarrativeRepo, PatternRepo, PatternRow, ProcessRepo, QuizRepo,
 };
 use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
@@ -96,6 +96,10 @@ async fn run_analyze(
     event_bus: &Arc<EventBus>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(path = %path.display(), "analyzing codebase");
+
+    // 0. CLEAR previous analysis data (enables re-analyze)
+    info!("Clearing previous analysis data...");
+    db.clear_analysis_data()?;
 
     // 1. PARSE
     info!("Step 1/5: Parsing repository...");
@@ -235,7 +239,10 @@ async fn run_analyze(
             let narrative_repo = NarrativeRepo::new(db.conn_arc());
             let batch: Vec<(String, Option<i64>, String)> = narratives
                 .iter()
-                .map(|n| (format!("{:?}", n.kind), n.target_id, n.content.clone()))
+                .map(|n| {
+                    let kind_key = codeilus_narrate::narrative_kind_key(n.kind).to_string();
+                    (kind_key, n.target_id, n.content.clone())
+                })
                 .collect();
             if !batch.is_empty() {
                 narrative_repo.insert_batch(&batch)?;
@@ -260,10 +267,55 @@ async fn run_analyze(
                     chapter.difficulty.as_str(),
                 )?;
                 for section in &chapter.sections {
-                    chapter_repo.insert_section(cid, &section.id, &section.title, section.kind.as_str())?;
+                    chapter_repo.insert_section(cid, &section.id, &section.title, section.kind.as_str(), &section.content)?;
                 }
             }
             info!(chapters = curriculum.chapters.len(), "Curriculum built and persisted");
+
+            // Generate quizzes for each chapter
+            let quiz_repo = QuizRepo::new(db.conn_arc());
+            let mut quiz_count = 0;
+            for chapter in &curriculum.chapters {
+                match codeilus_learn::generate_quiz(chapter, &graph) {
+                    Ok(quiz) => {
+                        // Map chapter title → DB chapter id via community_id
+                        // We need the DB chapter id, not the in-memory one
+                        // Find the DB chapter by matching community_id
+                        let db_chapter_id = if let Some(comm_id) = chapter.community_id {
+                            let chapter_repo2 = ChapterRepo::new(db.conn_arc());
+                            chapter_repo2.list_ordered().ok().and_then(|chs| {
+                                chs.iter().find(|c| c.community_id == Some(comm_id.0)).map(|c| c.id)
+                            })
+                        } else {
+                            None
+                        };
+
+                        if let Some(db_cid) = db_chapter_id {
+                            for q in &quiz.questions {
+                                let kind_str = match q.kind {
+                                    codeilus_learn::QuizQuestionKind::MultipleChoice => "multiple_choice",
+                                    codeilus_learn::QuizQuestionKind::TrueFalse => "true_false",
+                                    codeilus_learn::QuizQuestionKind::ImpactAnalysis => "impact_analysis",
+                                };
+                                if let Err(e) = quiz_repo.insert(
+                                    db_cid,
+                                    &q.question,
+                                    kind_str,
+                                    &q.options,
+                                    q.correct_index,
+                                    &q.explanation,
+                                ) {
+                                    tracing::warn!(error = %e, "Failed to insert quiz question");
+                                } else {
+                                    quiz_count += 1;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => tracing::warn!(chapter = chapter.title, error = %e, "Quiz generation failed"),
+                }
+            }
+            info!(count = quiz_count, "Quiz questions generated and persisted");
         }
         Err(e) => tracing::warn!(error = %e, "Curriculum generation failed (non-fatal)"),
     }
@@ -336,10 +388,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    let state = AppState::new(Arc::clone(&db), Arc::clone(&event_bus));
+    let mut state = AppState::new(Arc::clone(&db), Arc::clone(&event_bus));
 
     match cli.command {
         Some(Command::Serve { port }) => {
+            state = state.with_repo_root(std::env::current_dir()?);
             let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
             info!(%addr, "starting codeilus server");
             serve_until_signal(addr, state, shutdown_signal()).await?;
@@ -361,7 +414,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 ..Default::default()
             };
             info!(?date, "harvesting trending repos");
-            let repos = codeilus_harvest::harvest_trending(config).await?;
+            let repos = codeilus_harvest::harvest_trending(config, Some(&db)).await?;
             info!(count = repos.len(), "harvest complete");
             for repo in &repos {
                 info!(
@@ -400,6 +453,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // Default: if path given, analyze + serve; otherwise just serve
             if let Some(ref repo_path) = cli.path {
                 run_analyze(repo_path, &db, &event_bus).await?;
+                state = state.with_repo_root(std::fs::canonicalize(repo_path)?);
+            } else {
+                state = state.with_repo_root(std::env::current_dir()?);
             }
             let addr: SocketAddr = "127.0.0.1:4174".parse()?;
             info!(%addr, "starting codeilus server");

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::extract::{Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use codeilus_search::{SearchEngine, SearchResult, SearchResultKind};
 
@@ -20,11 +20,44 @@ pub struct SearchParams {
     limit: Option<usize>,
 }
 
-/// GET /search?q=...&type=file|symbol|narrative&limit=20
+#[derive(Serialize)]
+pub struct SearchResponse {
+    results: Vec<SearchResultItem>,
+}
+
+#[derive(Serialize)]
+pub struct SearchResultItem {
+    kind: String,
+    id: i64,
+    name: String,
+    path: Option<String>,
+    score: f64,
+    snippet: String,
+}
+
+impl From<SearchResult> for SearchResultItem {
+    fn from(r: SearchResult) -> Self {
+        let kind = match r.kind {
+            SearchResultKind::File => "file",
+            SearchResultKind::Symbol => "symbol",
+            SearchResultKind::Narrative => "narrative",
+        };
+        Self {
+            kind: kind.to_string(),
+            id: r.id,
+            name: r.name,
+            path: r.metadata.file_path,
+            score: r.score,
+            snippet: r.snippet,
+        }
+    }
+}
+
+/// GET /api/v1/search?q=...&type=file|symbol|narrative&limit=20
 async fn search(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
-) -> Result<Json<Vec<SearchResult>>, ApiError> {
+) -> Result<Json<SearchResponse>, ApiError> {
     let engine = SearchEngine::new(Arc::clone(&state.db));
     let kind = params.kind.as_deref().map(|k| match k {
         "file" => SearchResultKind::File,
@@ -34,9 +67,10 @@ async fn search(
     });
     let limit = params.limit.unwrap_or(20).min(100);
     let results = engine.search(&params.q, kind, limit)?;
-    Ok(Json(results))
+    let items = results.into_iter().map(SearchResultItem::from).collect();
+    Ok(Json(SearchResponse { results: items }))
 }
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/search", get(search))
+    Router::new().route("/api/v1/search", get(search))
 }

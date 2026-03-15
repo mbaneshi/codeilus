@@ -1,9 +1,11 @@
 //! API route definitions.
 
 pub mod ask;
+pub mod chapters;
 pub mod files;
 pub mod graph;
 pub mod health;
+pub mod narratives;
 pub mod search;
 pub mod symbols;
 pub mod ws;
@@ -20,4 +22,6 @@ pub fn router() -> Router<AppState> {
         .merge(graph::router())
         .merge(search::router())
         .merge(ask::router())
+        .merge(narratives::router())
+        .merge(chapters::router())
 }

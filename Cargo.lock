@@ -351,6 +351,7 @@ dependencies = [
 name = "codeilus-app"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "clap",
  "codeilus-analyze",
  "codeilus-api",
@@ -365,8 +366,11 @@ dependencies = [
  "codeilus-metrics",
  "codeilus-narrate",
  "codeilus-parse",
+ "http-body-util",
+ "serde_json",
  "tokio",
  "tokio-util",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]
@@ -521,6 +525,7 @@ dependencies = [
  "codeilus-core",
  "codeilus-db",
  "codeilus-graph",
+ "codeilus-llm",
  "codeilus-parse",
  "petgraph",
  "serde",
