@@ -59,15 +59,22 @@ pub fn score_entry_points(graph: &DiGraph<GraphNode, GraphEdge>) -> Vec<EntryPoi
                 reasons.push("CLI pattern");
             }
 
-            // High fan-in → +0.3
             let in_count = fan_in.get(&node.symbol_id).copied().unwrap_or(0);
-            if in_count >= 3 {
-                score += 0.3;
-                reasons.push("high fan-in");
+            let out_count = graph
+                .neighbors(idx)
+                .count();
+
+            // High fan-in (utility function) → -0.5
+            if in_count > 5 {
+                score -= 0.5;
+                reasons.push("high fan-in (utility)");
             }
 
-            // Zero callers (top-level) → +0.2
-            if in_count == 0 {
+            // Zero callers but calls others → +0.5 (true entry point)
+            if in_count == 0 && out_count > 0 {
+                score += 0.5;
+                reasons.push("zero callers, calls others");
+            } else if in_count == 0 {
                 score += 0.2;
                 reasons.push("zero callers");
             }
@@ -78,9 +85,10 @@ pub fn score_entry_points(graph: &DiGraph<GraphNode, GraphEdge>) -> Vec<EntryPoi
                 reason: reasons.join(", "),
             }
         })
-        .filter(|ep| ep.score > 0.0)
+        .filter(|ep| ep.score >= 0.5)
         .collect();
 
     entry_points.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    entry_points.truncate(30);
     entry_points
 }

@@ -26,6 +26,8 @@ pub struct Section {
     pub id: String,
     pub title: String,
     pub kind: SectionKind,
+    /// Populated content for this section (markdown).
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

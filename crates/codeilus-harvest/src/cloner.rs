@@ -54,6 +54,11 @@ impl CloneQueue {
             }
             repo.status = HarvestStatus::Cloning;
 
+            // Rate limit: 1s delay between clone task spawns
+            if i > 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+
             let semaphore = Arc::clone(&self.semaphore);
             let clone_dir = self.clone_dir.clone();
             let owner = repo.owner.clone();

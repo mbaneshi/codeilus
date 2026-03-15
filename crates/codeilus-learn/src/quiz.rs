@@ -5,9 +5,12 @@ use codeilus_core::CodeilusResult;
 use codeilus_graph::KnowledgeGraph;
 use tracing::debug;
 
+use petgraph::visit::EdgeRef;
+
 use crate::types::{Chapter, Quiz, QuizQuestion, QuizQuestionKind};
 
-const TARGET_QUESTIONS: usize = 5;
+const MIN_QUESTIONS: usize = 3;
+const MAX_QUESTIONS: usize = 5;
 
 /// Generate a quiz for a chapter from graph data.
 pub fn generate_quiz(chapter: &Chapter, graph: &KnowledgeGraph) -> CodeilusResult<Quiz> {
@@ -39,12 +42,18 @@ pub fn generate_quiz(chapter: &Chapter, graph: &KnowledgeGraph) -> CodeilusResul
     // Generate TrueFalse questions about call relationships
     questions.extend(generate_call_questions(graph, &member_symbols, chapter.id));
 
+    // Generate community membership questions ("Which module contains X?")
+    questions.extend(generate_membership_questions(graph, &member_symbols, chapter.id));
+
+    // Generate heritage questions ("True/False: X extends Y")
+    questions.extend(generate_heritage_questions(graph, &member_symbols, chapter.id));
+
     // Generate ImpactAnalysis questions
     questions.extend(generate_impact_questions(graph, &member_symbols, chapter.id));
 
-    // Trim to target count or pad with generic questions
-    questions.truncate(TARGET_QUESTIONS);
-    while questions.len() < TARGET_QUESTIONS {
+    // Trim to max and pad to min with generic questions
+    questions.truncate(MAX_QUESTIONS);
+    while questions.len() < MIN_QUESTIONS {
         questions.push(make_generic_question(
             chapter.id,
             questions.len(),
@@ -214,6 +223,122 @@ fn generate_impact_questions(
     questions
 }
 
+/// "Which module contains X?" — community membership questions.
+fn generate_membership_questions(
+    graph: &KnowledgeGraph,
+    member_symbols: &[codeilus_core::ids::SymbolId],
+    chapter_id: ChapterId,
+) -> Vec<QuizQuestion> {
+    let mut questions = Vec::new();
+
+    // Pick one member and ask which module it belongs to
+    if let Some(&sid) = member_symbols.first() {
+        let node_idx = match graph.node_index.get(&sid) {
+            Some(idx) => *idx,
+            None => return questions,
+        };
+        let node = &graph.graph[node_idx];
+        let correct_community = node
+            .community_id
+            .and_then(|cid| graph.communities.iter().find(|c| c.id == cid));
+
+        if let Some(correct) = correct_community {
+            let mut options = vec![correct.label.clone()];
+            // Add wrong community labels
+            for comm in &graph.communities {
+                if comm.id != correct.id && options.len() < 4 {
+                    options.push(comm.label.clone());
+                }
+            }
+            // Pad if not enough communities
+            while options.len() < 2 {
+                options.push("Utilities".to_string());
+            }
+
+            questions.push(QuizQuestion {
+                id: format!("q_member_{}_{}", chapter_id.0, 0),
+                question: format!("Which module contains '{}'?", node.name),
+                kind: QuizQuestionKind::MultipleChoice,
+                options,
+                correct_index: 0,
+                explanation: format!(
+                    "'{}' is a member of the '{}' community.",
+                    node.name, correct.label
+                ),
+            });
+        }
+    }
+
+    questions
+}
+
+/// "True/False: X extends Y" — heritage (Extends / Implements) questions.
+fn generate_heritage_questions(
+    graph: &KnowledgeGraph,
+    member_symbols: &[codeilus_core::ids::SymbolId],
+    chapter_id: ChapterId,
+) -> Vec<QuizQuestion> {
+    use codeilus_core::types::EdgeKind;
+
+    let mut questions = Vec::new();
+
+    for (i, &sid) in member_symbols.iter().take(2).enumerate() {
+        let node_idx = match graph.node_index.get(&sid) {
+            Some(idx) => *idx,
+            None => continue,
+        };
+        let node = &graph.graph[node_idx];
+
+        // Look for Extends or Implements edges from this node
+        let heritage_target: Option<(String, &str)> = graph
+            .graph
+            .edges(node_idx)
+            .find_map(|edge| {
+                let kind_label = match edge.weight().kind {
+                    EdgeKind::Extends => Some("extends"),
+                    EdgeKind::Implements => Some("implements"),
+                    _ => None,
+                };
+                kind_label.map(|label| {
+                    let target = &graph.graph[edge.target()];
+                    (target.name.clone(), label)
+                })
+            });
+
+        if let Some((target_name, verb)) = heritage_target {
+            // True statement
+            questions.push(QuizQuestion {
+                id: format!("q_heritage_{}_{}", chapter_id.0, i),
+                question: format!("True or False: '{}' {} '{}'.", node.name, verb, target_name),
+                kind: QuizQuestionKind::TrueFalse,
+                options: vec!["True".to_string(), "False".to_string()],
+                correct_index: 0,
+                explanation: format!(
+                    "'{}' {} '{}' as shown by the {} edge in the knowledge graph.",
+                    node.name, verb, target_name,
+                    verb.to_uppercase()
+                ),
+            });
+        } else {
+            // False statement with a fake heritage
+            let fake_parent = format!("Base{}", node.name);
+            questions.push(QuizQuestion {
+                id: format!("q_heritage_{}_{}", chapter_id.0, i),
+                question: format!("True or False: '{}' extends '{}'.", node.name, fake_parent),
+                kind: QuizQuestionKind::TrueFalse,
+                options: vec!["True".to_string(), "False".to_string()],
+                correct_index: 1,
+                explanation: format!(
+                    "'{}' does not extend '{}' — there is no such edge in the knowledge graph.",
+                    node.name, fake_parent
+                ),
+            });
+        }
+    }
+
+    questions
+}
+
 fn make_generic_question(
     chapter_id: ChapterId,
     index: usize,
@@ -309,6 +434,7 @@ mod tests {
                     id: k.as_str().to_string(),
                     title: k.title().to_string(),
                     kind: *k,
+                    content: String::new(),
                 })
                 .collect(),
             difficulty: Difficulty::Beginner,
@@ -321,7 +447,11 @@ mod tests {
         let graph = make_test_graph_with_edges();
         let chapter = make_test_chapter();
         let quiz = generate_quiz(&chapter, &graph).unwrap();
-        assert_eq!(quiz.questions.len(), 5, "Quiz should have exactly 5 questions");
+        assert!(
+            (3..=5).contains(&quiz.questions.len()),
+            "Quiz should have 3-5 questions, got {}",
+            quiz.questions.len()
+        );
     }
 
     #[test]

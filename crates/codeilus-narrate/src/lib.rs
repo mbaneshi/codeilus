@@ -19,6 +19,7 @@ pub async fn generate_all_narratives(
     repo_path: &Path,
 ) -> CodeilusResult<Vec<Narrative>> {
     NarrativeGenerator::new()
+        .await
         .generate_all(graph, parsed_files, repo_path)
         .await
 }

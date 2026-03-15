@@ -22,13 +22,20 @@ pub fn build_call_edges(
         let file_path = pf.path.to_string_lossy().to_string();
 
         for call in &pf.calls {
-            // Resolve caller
-            let caller_id = resolve_symbol(
-                &call.caller,
-                &file_path,
-                symbol_index,
-                name_to_id,
-            );
+            // Resolve caller — handle <module> by using first symbol in same file
+            let caller_id = if call.caller == "<module>" {
+                name_to_id
+                    .iter()
+                    .find(|((_, path), _)| path == &file_path)
+                    .map(|(_, &id)| (id, Confidence(0.5)))
+            } else {
+                resolve_symbol(
+                    &call.caller,
+                    &file_path,
+                    symbol_index,
+                    name_to_id,
+                )
+            };
 
             // Resolve callee
             let callee_id = resolve_symbol(

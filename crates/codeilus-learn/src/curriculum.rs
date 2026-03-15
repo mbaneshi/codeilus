@@ -14,15 +14,7 @@ pub fn generate(graph: &KnowledgeGraph) -> CodeilusResult<Curriculum> {
     let mut chapter_counter: i64 = 1;
 
     // Chapter 0: The Big Picture (always first, no community)
-    let chapter0 = make_chapter(
-        ChapterId(chapter_counter),
-        0,
-        "The Big Picture",
-        "An overview of the entire codebase — architecture, key components, and how everything fits together.",
-        None,
-        Difficulty::Beginner,
-        vec![],
-    );
+    let chapter0 = make_big_picture_chapter(ChapterId(chapter_counter), graph);
     chapter_counter += 1;
     chapters.push(chapter0);
 
@@ -31,6 +23,9 @@ pub fn generate(graph: &KnowledgeGraph) -> CodeilusResult<Curriculum> {
 
     // Map community_id → chapter_id for prerequisite tracking
     let mut community_to_chapter: HashMap<i64, ChapterId> = HashMap::new();
+
+    // Filter: only create chapters for communities with enough members to be meaningful
+    let min_community_size = 5;
 
     for (order, community_id) in sorted_communities.iter().enumerate() {
         let community = graph
@@ -41,6 +36,11 @@ pub fn generate(graph: &KnowledgeGraph) -> CodeilusResult<Curriculum> {
             Some(c) => c,
             None => continue,
         };
+
+        // Skip tiny communities — they don't warrant their own chapter
+        if community.members.len() < min_community_size {
+            continue;
+        }
 
         let chapter_id = ChapterId(chapter_counter);
         chapter_counter += 1;
@@ -55,14 +55,14 @@ pub fn generate(graph: &KnowledgeGraph) -> CodeilusResult<Curriculum> {
             .filter_map(|dep_id| community_to_chapter.get(dep_id).copied())
             .collect();
 
-        let chapter = make_chapter(
+        let chapter = make_community_chapter(
             chapter_id,
             order + 1,
-            &community.label,
-            &format!("Deep dive into the {} module.", community.label),
-            Some(codeilus_core::ids::CommunityId(*community_id)),
+            community,
             difficulty,
-            prerequisite_ids,
+            prerequisite_ids.clone(),
+            graph,
+            &community_to_chapter,
         );
 
         community_to_chapter.insert(*community_id, chapter_id);
@@ -72,14 +72,11 @@ pub fn generate(graph: &KnowledgeGraph) -> CodeilusResult<Curriculum> {
     // Final chapter: Putting It All Together (always last)
     let final_order = chapters.len();
     let all_prereqs: Vec<ChapterId> = chapters.iter().map(|c| c.id).collect();
-    let final_chapter = make_chapter(
+    let final_chapter = make_final_chapter(
         ChapterId(chapter_counter),
         final_order,
-        "Putting It All Together",
-        "Cross-cutting execution flows, how modules interact, and the complete picture.",
-        None,
-        Difficulty::Intermediate,
         all_prereqs,
+        graph,
     );
     chapters.push(final_chapter);
 
@@ -96,32 +93,378 @@ pub fn generate(graph: &KnowledgeGraph) -> CodeilusResult<Curriculum> {
     })
 }
 
-fn make_chapter(
+fn make_section(kind: SectionKind, content: String) -> Section {
+    Section {
+        id: kind.as_str().to_string(),
+        title: kind.title().to_string(),
+        kind,
+        content,
+    }
+}
+
+/// Build Chapter 0: "The Big Picture" with real content from the graph.
+fn make_big_picture_chapter(id: ChapterId, graph: &KnowledgeGraph) -> Chapter {
+    let total_nodes = graph.graph.node_count();
+    let total_edges = graph.graph.edge_count();
+    let total_communities = graph.communities.len();
+
+    // Overview: architecture summary
+    let overview = {
+        let mut lines = vec![format!(
+            "This codebase contains **{total_nodes}** symbols organised into \
+             **{total_communities}** modules, connected by **{total_edges}** relationships."
+        )];
+        if !graph.entry_points.is_empty() {
+            lines.push("\n### Entry Points".to_string());
+            for ep in graph.entry_points.iter().take(10) {
+                if let Some(idx) = graph.node_index.get(&ep.symbol_id) {
+                    let node = &graph.graph[*idx];
+                    lines.push(format!(
+                        "- **{}** (score {:.1}) — {}",
+                        node.name, ep.score, ep.reason
+                    ));
+                }
+            }
+        }
+        lines.join("\n")
+    };
+
+    // Key Concepts: list communities with member counts
+    let key_concepts = {
+        let mut lines = vec!["### Modules at a Glance".to_string()];
+        for comm in &graph.communities {
+            lines.push(format!(
+                "- **{}** — {} symbols (cohesion {:.0}%)",
+                comm.label,
+                comm.members.len(),
+                comm.cohesion * 100.0
+            ));
+        }
+        lines.join("\n")
+    };
+
+    // Diagram placeholder
+    let diagram = "See the interactive dependency diagram for a visual map of all modules.".to_string();
+
+    // Code Walkthrough: top-level reading order by in-degree (most-imported first)
+    let code_walkthrough = {
+        let mut in_degrees: Vec<(String, usize)> = graph
+            .graph
+            .node_indices()
+            .map(|idx| {
+                let name = graph.graph[idx].name.clone();
+                let deg = graph
+                    .graph
+                    .neighbors_directed(idx, petgraph::Direction::Incoming)
+                    .count();
+                (name, deg)
+            })
+            .collect();
+        in_degrees.sort_by(|a, b| b.1.cmp(&a.1));
+        let mut lines = vec!["### Suggested Reading Order (most-imported first)".to_string()];
+        for (i, (name, deg)) in in_degrees.iter().take(15).enumerate() {
+            lines.push(format!("{}. **{}** — imported by {} others", i + 1, name, deg));
+        }
+        lines.join("\n")
+    };
+
+    // Connections: inter-module edges summary
+    let connections = {
+        let mut lines = vec!["### How Modules Connect".to_string()];
+        for comm in &graph.communities {
+            let dep_ids = get_community_dependencies(graph, comm.id.0);
+            if dep_ids.is_empty() {
+                lines.push(format!("- **{}** — standalone (no outgoing module deps)", comm.label));
+            } else {
+                let dep_labels: Vec<String> = dep_ids
+                    .iter()
+                    .filter_map(|did| graph.communities.iter().find(|c| c.id.0 == *did))
+                    .map(|c| c.label.clone())
+                    .collect();
+                lines.push(format!("- **{}** → {}", comm.label, dep_labels.join(", ")));
+            }
+        }
+        lines.join("\n")
+    };
+
+    let quiz_content = "Complete the quiz to test your understanding of the big picture.".to_string();
+
+    Chapter {
+        id,
+        order: 0,
+        title: "The Big Picture".to_string(),
+        description: "An overview of the entire codebase — architecture, key components, and how everything fits together.".to_string(),
+        community_id: None,
+        sections: vec![
+            make_section(SectionKind::Overview, overview),
+            make_section(SectionKind::KeyConcepts, key_concepts),
+            make_section(SectionKind::Diagram, diagram),
+            make_section(SectionKind::CodeWalkthrough, code_walkthrough),
+            make_section(SectionKind::Connections, connections),
+            make_section(SectionKind::Quiz, quiz_content),
+        ],
+        difficulty: Difficulty::Beginner,
+        prerequisite_ids: vec![],
+    }
+}
+
+/// Build a chapter for a specific community with populated content.
+fn make_community_chapter(
     id: ChapterId,
     order: usize,
-    title: &str,
-    description: &str,
-    community_id: Option<codeilus_core::ids::CommunityId>,
+    community: &codeilus_graph::Community,
     difficulty: Difficulty,
     prerequisite_ids: Vec<ChapterId>,
+    graph: &KnowledgeGraph,
+    community_to_chapter: &HashMap<i64, ChapterId>,
 ) -> Chapter {
-    let sections: Vec<Section> = SectionKind::all()
-        .iter()
-        .map(|kind| Section {
-            id: kind.as_str().to_string(),
-            title: kind.title().to_string(),
-            kind: *kind,
-        })
-        .collect();
+    // Overview: list key symbols and their roles
+    let overview = {
+        let mut lines = vec![format!(
+            "The **{}** module contains **{}** symbols with a cohesion of {:.0}%.",
+            community.label,
+            community.members.len(),
+            community.cohesion * 100.0
+        )];
+        lines.push("\n### Key Symbols".to_string());
+        for &sid in community.members.iter().take(20) {
+            if let Some(idx) = graph.node_index.get(&sid) {
+                let node = &graph.graph[*idx];
+                lines.push(format!("- **{}** ({})", node.name, node.kind));
+            }
+        }
+        lines.join("\n")
+    };
+
+    // Key Concepts: group members by kind
+    let key_concepts = {
+        let mut by_kind: HashMap<&str, Vec<&str>> = HashMap::new();
+        for &sid in &community.members {
+            if let Some(idx) = graph.node_index.get(&sid) {
+                let node = &graph.graph[*idx];
+                by_kind.entry(node.kind.as_str()).or_default().push(node.name.as_str());
+            }
+        }
+        let mut lines = vec!["### Symbols by Kind".to_string()];
+        let mut kinds: Vec<_> = by_kind.into_iter().collect();
+        kinds.sort_by_key(|(k, _)| *k);
+        for (kind, names) in kinds {
+            lines.push(format!("- **{}**: {}", kind, names.join(", ")));
+        }
+        lines.join("\n")
+    };
+
+    let diagram = format!(
+        "See the interactive diagram for the **{}** module and its internal structure.",
+        community.label
+    );
+
+    // Code Walkthrough: ordered by in-degree within community (most-imported first)
+    let code_walkthrough = {
+        let member_set: HashSet<petgraph::graph::NodeIndex> = community
+            .members
+            .iter()
+            .filter_map(|sid| graph.node_index.get(sid).copied())
+            .collect();
+        let mut in_degrees: Vec<(String, String, usize)> = community
+            .members
+            .iter()
+            .filter_map(|sid| graph.node_index.get(sid).map(|idx| (sid, *idx)))
+            .map(|(_sid, idx)| {
+                let node = &graph.graph[idx];
+                let deg = graph
+                    .graph
+                    .neighbors_directed(idx, petgraph::Direction::Incoming)
+                    .filter(|n| member_set.contains(n))
+                    .count();
+                (node.name.clone(), node.kind.clone(), deg)
+            })
+            .collect();
+        in_degrees.sort_by(|a, b| b.2.cmp(&a.2));
+        let mut lines = vec!["### Reading Order (most-referenced first)".to_string()];
+        for (i, (name, kind, deg)) in in_degrees.iter().enumerate() {
+            lines.push(format!(
+                "{}. **{}** ({}) — referenced by {} members",
+                i + 1, name, kind, deg
+            ));
+        }
+        lines.join("\n")
+    };
+
+    // Connections: which other chapters/modules this one depends on
+    let connections = {
+        let dep_ids = get_community_dependencies(graph, community.id.0);
+        let mut lines = vec!["### Dependencies".to_string()];
+        if dep_ids.is_empty() {
+            lines.push("This module has no outgoing dependencies on other modules.".to_string());
+        } else {
+            for did in &dep_ids {
+                let label = graph
+                    .communities
+                    .iter()
+                    .find(|c| c.id.0 == *did)
+                    .map(|c| c.label.as_str())
+                    .unwrap_or("unknown");
+                let chapter_ref = community_to_chapter
+                    .get(did)
+                    .map(|cid| format!(" (Chapter {})", cid.0))
+                    .unwrap_or_default();
+                lines.push(format!("- Depends on **{}**{}", label, chapter_ref));
+            }
+        }
+        // Also show who depends on us (reverse)
+        let dependents: Vec<&str> = graph
+            .communities
+            .iter()
+            .filter(|c| c.id.0 != community.id.0)
+            .filter(|c| {
+                get_community_dependencies(graph, c.id.0).contains(&community.id.0)
+            })
+            .map(|c| c.label.as_str())
+            .collect();
+        if !dependents.is_empty() {
+            lines.push("\n### Dependents".to_string());
+            for d in &dependents {
+                lines.push(format!("- **{}** depends on this module", d));
+            }
+        }
+        lines.join("\n")
+    };
+
+    let quiz_content = format!(
+        "Complete the quiz to test your understanding of the **{}** module.",
+        community.label
+    );
 
     Chapter {
         id,
         order,
-        title: title.to_string(),
-        description: description.to_string(),
-        community_id,
-        sections,
+        title: community.label.clone(),
+        description: format!("Deep dive into the {} module.", community.label),
+        community_id: Some(community.id),
+        sections: vec![
+            make_section(SectionKind::Overview, overview),
+            make_section(SectionKind::KeyConcepts, key_concepts),
+            make_section(SectionKind::Diagram, diagram),
+            make_section(SectionKind::CodeWalkthrough, code_walkthrough),
+            make_section(SectionKind::Connections, connections),
+            make_section(SectionKind::Quiz, quiz_content),
+        ],
         difficulty,
+        prerequisite_ids,
+    }
+}
+
+/// Build the final chapter: "Putting It All Together" with cross-cutting data flow.
+fn make_final_chapter(
+    id: ChapterId,
+    order: usize,
+    prerequisite_ids: Vec<ChapterId>,
+    graph: &KnowledgeGraph,
+) -> Chapter {
+    // Overview: data flow summary from processes
+    let overview = {
+        let mut lines = vec![
+            "Now that you've explored each module, let's see how they work together.".to_string(),
+        ];
+        if !graph.processes.is_empty() {
+            lines.push("\n### Execution Flows".to_string());
+            for proc in &graph.processes {
+                lines.push(format!("- **{}**", proc.name));
+                for step in &proc.steps {
+                    if let Some(idx) = graph.node_index.get(&step.symbol_id) {
+                        let node = &graph.graph[*idx];
+                        lines.push(format!(
+                            "  {}. `{}` — {}",
+                            step.order + 1,
+                            node.name,
+                            step.description
+                        ));
+                    }
+                }
+            }
+        }
+        lines.join("\n")
+    };
+
+    // Key Concepts: cross-module edge summary
+    let key_concepts = {
+        let mut cross_edges: HashMap<(String, String), usize> = HashMap::new();
+        for edge_idx in graph.graph.edge_indices() {
+            if let Some((src, tgt)) = graph.graph.edge_endpoints(edge_idx) {
+                let src_comm = graph.graph[src].community_id;
+                let tgt_comm = graph.graph[tgt].community_id;
+                if let (Some(sc), Some(tc)) = (src_comm, tgt_comm) {
+                    if sc != tc {
+                        let sl = graph.communities.iter().find(|c| c.id == sc).map(|c| c.label.clone()).unwrap_or_default();
+                        let tl = graph.communities.iter().find(|c| c.id == tc).map(|c| c.label.clone()).unwrap_or_default();
+                        *cross_edges.entry((sl, tl)).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        let mut lines = vec!["### Cross-Module Relationships".to_string()];
+        let mut sorted: Vec<_> = cross_edges.into_iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        for ((from, to), count) in sorted.iter().take(20) {
+            lines.push(format!("- **{}** → **{}** ({} edges)", from, to, count));
+        }
+        if sorted.is_empty() {
+            lines.push("No cross-module edges detected.".to_string());
+        }
+        lines.join("\n")
+    };
+
+    let diagram = "See the full cross-module dependency diagram.".to_string();
+
+    // Walkthrough: entry points as starting reading order
+    let code_walkthrough = {
+        let mut lines = vec!["### Start-to-Finish Reading Path".to_string()];
+        if graph.entry_points.is_empty() {
+            lines.push("Follow the chapter order for the recommended reading path.".to_string());
+        } else {
+            for (i, ep) in graph.entry_points.iter().take(10).enumerate() {
+                if let Some(idx) = graph.node_index.get(&ep.symbol_id) {
+                    let node = &graph.graph[*idx];
+                    let comm_label = node
+                        .community_id
+                        .and_then(|cid| graph.communities.iter().find(|c| c.id == cid))
+                        .map(|c| c.label.as_str())
+                        .unwrap_or("—");
+                    lines.push(format!(
+                        "{}. **{}** in *{}* — {}",
+                        i + 1,
+                        node.name,
+                        comm_label,
+                        ep.reason
+                    ));
+                }
+            }
+        }
+        lines.join("\n")
+    };
+
+    let connections =
+        "All modules are connected. Review the Connections sections of earlier chapters for per-module details."
+            .to_string();
+
+    let quiz_content = "Final quiz: test your understanding of cross-cutting flows.".to_string();
+
+    Chapter {
+        id,
+        order,
+        title: "Putting It All Together".to_string(),
+        description: "Cross-cutting execution flows, how modules interact, and the complete picture.".to_string(),
+        community_id: None,
+        sections: vec![
+            make_section(SectionKind::Overview, overview),
+            make_section(SectionKind::KeyConcepts, key_concepts),
+            make_section(SectionKind::Diagram, diagram),
+            make_section(SectionKind::CodeWalkthrough, code_walkthrough),
+            make_section(SectionKind::Connections, connections),
+            make_section(SectionKind::Quiz, quiz_content),
+        ],
+        difficulty: Difficulty::Intermediate,
         prerequisite_ids,
     }
 }
@@ -288,8 +631,8 @@ mod tests {
         for c in 0..num_communities {
             let cid = CommunityId(c as i64);
             let mut members = Vec::new();
-            for n in 0..3 {
-                let sid = SymbolId((c * 3 + n) as i64);
+            for n in 0..6 {
+                let sid = SymbolId((c * 6 + n) as i64);
                 let idx = graph.add_node(GraphNode {
                     symbol_id: sid,
                     file_id: FileId(0),
@@ -338,7 +681,7 @@ mod tests {
         // Community 0 depends on Community 1 (has edge from 0→1)
         let mut kg = make_test_graph(2);
         let src = *kg.node_index.get(&SymbolId(0)).unwrap(); // community 0
-        let tgt = *kg.node_index.get(&SymbolId(3)).unwrap(); // community 1
+        let tgt = *kg.node_index.get(&SymbolId(6)).unwrap(); // community 1
         kg.graph.add_edge(
             src,
             tgt,
@@ -405,8 +748,8 @@ mod tests {
             .filter(|c| c.community_id.is_some())
             .collect();
         assert!(!community_chapters.is_empty());
-        // 3 members → Beginner
-        assert_eq!(community_chapters[0].difficulty, Difficulty::Beginner);
+        // 6 members → Intermediate
+        assert_eq!(community_chapters[0].difficulty, Difficulty::Intermediate);
     }
 
     #[test]
@@ -414,7 +757,7 @@ mod tests {
         // Community 0 depends on Community 1
         let mut kg = make_test_graph(2);
         let src = *kg.node_index.get(&SymbolId(0)).unwrap();
-        let tgt = *kg.node_index.get(&SymbolId(3)).unwrap();
+        let tgt = *kg.node_index.get(&SymbolId(6)).unwrap();
         kg.graph.add_edge(
             src,
             tgt,

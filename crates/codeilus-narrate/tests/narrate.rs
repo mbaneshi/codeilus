@@ -234,7 +234,7 @@ fn placeholder_module_summary() {
 
 #[tokio::test]
 async fn generator_placeholder_mode() {
-    let gen = NarrativeGenerator::new();
+    let gen = NarrativeGenerator::placeholder_only();
     let graph = graph_with_communities();
     let files = sample_parsed_files();
     let narratives = gen
@@ -248,8 +248,42 @@ async fn generator_placeholder_mode() {
 }
 
 #[tokio::test]
+async fn generator_placeholder_mode_generates_all_kinds() {
+    let gen = NarrativeGenerator::placeholder_only();
+    let graph = graph_with_communities();
+    let files = sample_parsed_files();
+    let narratives = gen
+        .generate_all(&graph, &files, std::path::Path::new("/tmp"))
+        .await
+        .unwrap();
+
+    // 6 global + 2 communities = 8
+    assert_eq!(narratives.len(), 8, "expected 8 narratives, got {}", narratives.len());
+
+    // Check all global kinds are present
+    assert!(narratives.iter().any(|n| n.kind == NarrativeKind::Overview));
+    assert!(narratives.iter().any(|n| n.kind == NarrativeKind::Architecture));
+    assert!(narratives.iter().any(|n| n.kind == NarrativeKind::ReadingOrder));
+    assert!(narratives.iter().any(|n| n.kind == NarrativeKind::ExtensionGuide));
+    assert!(narratives.iter().any(|n| n.kind == NarrativeKind::ContributionGuide));
+    assert!(narratives.iter().any(|n| n.kind == NarrativeKind::WhyTrending));
+
+    // Per-community module summaries
+    let summaries: Vec<_> = narratives
+        .iter()
+        .filter(|n| n.kind == NarrativeKind::ModuleSummary)
+        .collect();
+    assert_eq!(summaries.len(), 2, "should have 2 module summaries");
+
+    // All placeholders should be marked as such
+    for n in &narratives {
+        assert!(n.is_placeholder, "placeholder mode should mark all as placeholder: {:?}", n.kind);
+    }
+}
+
+#[tokio::test]
 async fn generator_all_kinds_covered() {
-    let gen = NarrativeGenerator::new();
+    let gen = NarrativeGenerator::placeholder_only();
     let graph = graph_with_communities();
     let files = sample_parsed_files();
     let narratives = gen
@@ -292,7 +326,7 @@ async fn generator_all_kinds_covered() {
 
 #[tokio::test]
 async fn narrative_content_not_empty() {
-    let gen = NarrativeGenerator::new();
+    let gen = NarrativeGenerator::placeholder_only();
     let graph = graph_with_communities();
     let files = sample_parsed_files();
     let narratives = gen
@@ -312,4 +346,34 @@ async fn narrative_content_not_empty() {
             n.kind
         );
     }
+}
+
+#[tokio::test]
+async fn skip_llm_env_var_uses_placeholders() {
+    // Set the env var for this test
+    std::env::set_var("CODEILUS_SKIP_LLM", "1");
+    let gen = NarrativeGenerator::new().await;
+    let graph = graph_with_communities();
+    let files = sample_parsed_files();
+    let narratives = gen
+        .generate_all(&graph, &files, std::path::Path::new("/tmp"))
+        .await
+        .unwrap();
+
+    // All should be placeholders since LLM is skipped
+    for n in &narratives {
+        assert!(
+            n.is_placeholder,
+            "CODEILUS_SKIP_LLM=1 should produce placeholders: {:?}",
+            n.kind
+        );
+    }
+
+    // Should still produce all narrative kinds
+    assert!(narratives.len() >= 8, "should have at least 8 narratives");
+    assert!(narratives.iter().any(|n| n.kind == NarrativeKind::Overview));
+    assert!(narratives.iter().any(|n| n.kind == NarrativeKind::ModuleSummary));
+
+    // Clean up
+    std::env::remove_var("CODEILUS_SKIP_LLM");
 }

@@ -3,10 +3,24 @@
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::stream_parser::{is_message_stop, parse_stream_line, StreamAccumulator};
 use crate::types::{LlmEvent, LlmRequest, LlmResponse};
+
+/// Phrases in LLM responses that indicate a billing/rate-limit error rather than real content.
+const GARBAGE_PHRASES: &[&str] = &[
+    "Credit balance",
+    "rate limit",
+    "too many requests",
+    "Rate limit",
+    "Too many requests",
+];
+
+/// Check if an LLM response looks like a billing/rate-limit error.
+fn is_garbage_response(text: &str) -> bool {
+    GARBAGE_PHRASES.iter().any(|phrase| text.contains(phrase))
+}
 
 /// Claude CLI subprocess wrapper.
 pub struct ClaudeCli {
@@ -14,9 +28,9 @@ pub struct ClaudeCli {
 }
 
 impl ClaudeCli {
-    /// Create a new ClaudeCli with default 60-second timeout.
+    /// Create a new ClaudeCli with default 180-second timeout.
     pub fn new() -> Self {
-        Self { timeout_secs: 60 }
+        Self { timeout_secs: 180 }
     }
 
     /// Create a new ClaudeCli with a custom timeout.
@@ -44,6 +58,7 @@ impl ClaudeCli {
     }
 
     /// Run a prompt and return the full response.
+    /// Retries once on error (timeout, non-zero exit, or garbage response) after a 2s delay.
     pub async fn prompt(&self, request: &LlmRequest) -> CodeilusResult<LlmResponse> {
         if !self.is_available().await {
             return Err(CodeilusError::Llm(
@@ -52,20 +67,46 @@ impl ClaudeCli {
             ));
         }
 
+        match self.prompt_once(request).await {
+            Ok(response) if !is_garbage_response(&response.text) => Ok(response),
+            Ok(response) => {
+                warn!(
+                    text_preview = &response.text[..response.text.len().min(100)],
+                    "garbage response detected, retrying after 2s"
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                let retry = self.prompt_once(request).await?;
+                if is_garbage_response(&retry.text) {
+                    Err(CodeilusError::Llm(
+                        "LLM returned a billing/rate-limit error instead of content".to_string(),
+                    ))
+                } else {
+                    Ok(retry)
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, "prompt failed, retrying after 2s");
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                self.prompt_once(request).await
+            }
+        }
+    }
+
+    /// Single attempt at running a prompt (no retry).
+    async fn prompt_once(&self, request: &LlmRequest) -> CodeilusResult<LlmResponse> {
         let mut cmd = Command::new("claude");
         cmd.arg("--output-format")
             .arg("stream-json")
+            .arg("--verbose")
             .arg("--print")
             .arg(&request.prompt);
 
         if let Some(system) = &request.system {
-            cmd.arg("--system").arg(system);
+            cmd.arg("--system-prompt").arg(system);
         }
 
-        if let Some(max_tokens) = request.max_tokens {
-            cmd.arg("--max-tokens").arg(max_tokens.to_string());
-        }
-
+        // Unset CLAUDECODE env var to allow nested Claude CLI invocations
+        cmd.env_remove("CLAUDECODE");
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
@@ -88,11 +129,12 @@ impl ClaudeCli {
 
         let result = tokio::time::timeout(timeout, async {
             while let Ok(Some(line)) = lines.next_line().await {
-                if is_message_stop(&line) {
-                    break;
-                }
+                // Parse first, then check for stop — the result line contains the text
                 if let Some(event) = parse_stream_line(&line) {
                     accumulator.feed(&event);
+                }
+                if is_message_stop(&line) {
+                    break;
                 }
             }
             accumulator.finish()
@@ -126,17 +168,16 @@ impl ClaudeCli {
         let mut cmd = Command::new("claude");
         cmd.arg("--output-format")
             .arg("stream-json")
+            .arg("--verbose")
             .arg("--print")
             .arg(&request.prompt);
 
         if let Some(system) = &request.system {
-            cmd.arg("--system").arg(system);
+            cmd.arg("--system-prompt").arg(system);
         }
 
-        if let Some(max_tokens) = request.max_tokens {
-            cmd.arg("--max-tokens").arg(max_tokens.to_string());
-        }
-
+        // Unset CLAUDECODE env var to allow nested Claude CLI invocations
+        cmd.env_remove("CLAUDECODE");
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
@@ -160,14 +201,14 @@ impl ClaudeCli {
 
             let stream_result = tokio::time::timeout(timeout, async {
                 while let Ok(Some(line)) = lines.next_line().await {
-                    if is_message_stop(&line) {
-                        break;
-                    }
                     if let Some(event) = parse_stream_line(&line) {
                         accumulator.feed(&event);
                         if tx.send(event).await.is_err() {
                             break;
                         }
+                    }
+                    if is_message_stop(&line) {
+                        break;
                     }
                 }
                 accumulator.finish()
@@ -233,7 +274,10 @@ mod tests {
         // If it is installed, we'd get a response (which is also fine)
         if let Err(CodeilusError::Llm(msg)) = &result {
             assert!(
-                msg.contains("not found") || msg.contains("Failed"),
+                msg.contains("not found")
+                    || msg.contains("Failed")
+                    || msg.contains("billing")
+                    || msg.contains("timed out"),
                 "Error should be descriptive: {}",
                 msg
             );

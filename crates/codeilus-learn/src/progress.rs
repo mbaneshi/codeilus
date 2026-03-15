@@ -256,7 +256,7 @@ mod tests {
             .insert(order, &format!("Chapter {}", order), "desc", None, "beginner")
             .unwrap();
         for kind in crate::types::SectionKind::all() {
-            repo.insert_section(id, kind.as_str(), kind.title(), kind.as_str())
+            repo.insert_section(id, kind.as_str(), kind.title(), kind.as_str(), "sample content")
                 .unwrap();
         }
         id
