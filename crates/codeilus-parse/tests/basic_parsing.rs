@@ -1,8 +1,12 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
-use codeilus_core::{EventBus, Language, SymbolKind};
-use codeilus_parse::{detect_language, parse_repository, ParseConfig};
+use codeilus_core::{EventBus, FileId, Language, SymbolKind};
+use codeilus_parse::{
+    detect_language, parse_repository, parse_repository_incremental, ExistingFile, ParseConfig,
+};
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -206,4 +210,104 @@ fn each_parsed_file_has_correct_language_and_nonempty_symbols() {
         let expected = Language::from_extension(ext).unwrap();
         assert_eq!(file.language, expected);
     }
+}
+
+#[test]
+fn incremental_parse_skips_unchanged_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Create two files
+    fs::write(
+        root.join("unchanged.py"),
+        "class Stable:\n    pass\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("changed.py"),
+        "def old():\n    return 1\n",
+    )
+    .unwrap();
+
+    // First parse — full
+    let config = ParseConfig::new(root.to_path_buf());
+    let first = parse_repository(&config, None).expect("first parse");
+    assert_eq!(first.len(), 2);
+
+    // Record current mtimes as the "existing" DB state
+    let now = SystemTime::now();
+    let mut existing = HashMap::new();
+    existing.insert(
+        "unchanged.py".to_string(),
+        ExistingFile {
+            id: FileId(1),
+            last_modified: Some(now),
+        },
+    );
+    existing.insert(
+        "changed.py".to_string(),
+        ExistingFile {
+            id: FileId(2),
+            // Use epoch so any file looks newer
+            last_modified: Some(SystemTime::UNIX_EPOCH),
+        },
+    );
+
+    // Incremental parse: unchanged.py has a future mtime so it's "unchanged",
+    // changed.py has epoch mtime so it's "changed"
+    let result = parse_repository_incremental(&config, &existing, None)
+        .expect("incremental parse");
+
+    // unchanged.py should be in unchanged_ids
+    assert!(
+        result.unchanged_ids.contains(&FileId(1)),
+        "unchanged.py should be skipped, unchanged_ids: {:?}",
+        result.unchanged_ids,
+    );
+
+    // changed.py should be re-parsed
+    assert!(
+        !result.changed_files.is_empty(),
+        "changed.py should be re-parsed"
+    );
+    assert!(
+        result.changed_files.iter().any(|f| f.path.ends_with("changed.py")),
+        "changed_files should contain changed.py"
+    );
+}
+
+#[test]
+fn incremental_parse_handles_new_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+
+    fs::write(root.join("existing.py"), "def f(): pass\n").unwrap();
+    fs::write(root.join("brand_new.py"), "def g(): pass\n").unwrap();
+
+    let config = ParseConfig::new(root.to_path_buf());
+
+    // Only existing.py is known
+    let mut existing = HashMap::new();
+    existing.insert(
+        "existing.py".to_string(),
+        ExistingFile {
+            id: FileId(1),
+            last_modified: Some(SystemTime::now()),
+        },
+    );
+
+    let result = parse_repository_incremental(&config, &existing, None)
+        .expect("incremental parse");
+
+    // brand_new.py should be parsed since it's not in existing
+    assert!(
+        result.changed_files.iter().any(|f| f.path.ends_with("brand_new.py")),
+        "new files should be parsed"
+    );
+
+    // existing.py should be unchanged
+    assert!(
+        result.unchanged_ids.contains(&FileId(1)),
+        "existing unchanged file should be in unchanged_ids"
+    );
 }

@@ -17,6 +17,7 @@ pub static QUERIES: &LanguageQueries = &LanguageQueries {
     calls: r#"
         (call function: (identifier) @callee) @call
         (call function: (attribute attribute: (identifier) @callee)) @call
+        (decorator (identifier) @callee) @call
     "#,
     heritage: r#"
         (class_definition
