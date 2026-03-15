@@ -30,7 +30,7 @@ All endpoints are under `/api/v1`.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/graph` | Full graph (`{ nodes: [], edges: [] }`) |
+| GET | `/graph` | Paginated graph. Optional `?community_id=X&limit=500&offset=0` |
 | GET | `/communities` | List communities with members |
 | GET | `/processes` | List execution flows with steps |
 
@@ -52,6 +52,17 @@ All endpoints are under `/api/v1`.
 | GET | `/progress` | Get section completion progress |
 | POST | `/chapters/:cid/sections/:sid/complete` | Mark section as complete |
 | GET | `/learner/stats` | Get XP, streak, badges, chapters completed |
+
+## Annotations
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/annotations` | List all annotations. Optional `?flagged=true` filter |
+| GET | `/annotations/:target_type/:target_id` | List annotations for a specific node/edge |
+| POST | `/annotations` | Create annotation. Body: `{ "target_type": "node", "target_id": 42, "content": "..." }` |
+| PUT | `/annotations/:id` | Update annotation content. Body: `{ "content": "..." }` |
+| POST | `/annotations/:id/flag` | Toggle flagged status |
+| DELETE | `/annotations/:id` | Delete annotation |
 
 ## Search
 

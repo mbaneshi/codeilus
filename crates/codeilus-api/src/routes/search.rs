@@ -72,5 +72,5 @@ async fn search(
 }
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/api/v1/search", get(search))
+    Router::new().route("/search", get(search))
 }

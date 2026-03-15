@@ -11,6 +11,7 @@ pub struct NarrativeRow {
     pub language: String,
     pub content: String,
     pub generated_at: String,
+    pub is_placeholder: bool,
 }
 
 pub struct NarrativeRepo {
@@ -28,11 +29,12 @@ impl NarrativeRepo {
         kind: &str,
         target_id: Option<i64>,
         content: &str,
+        is_placeholder: bool,
     ) -> CodeilusResult<i64> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         conn.execute(
-            "INSERT INTO narratives (kind, target_id, content) VALUES (?1, ?2, ?3)",
-            params![kind, target_id, content],
+            "INSERT INTO narratives (kind, target_id, content, is_placeholder) VALUES (?1, ?2, ?3, ?4)",
+            params![kind, target_id, content, is_placeholder],
         )
         .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(conn.last_insert_rowid())
@@ -41,7 +43,7 @@ impl NarrativeRepo {
     /// Batch insert narratives in a transaction.
     pub fn insert_batch(
         &self,
-        narratives: &[(String, Option<i64>, String)],
+        narratives: &[(String, Option<i64>, String, bool)],
     ) -> CodeilusResult<Vec<i64>> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let tx = conn
@@ -51,11 +53,11 @@ impl NarrativeRepo {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO narratives (kind, target_id, content) VALUES (?1, ?2, ?3)",
+                    "INSERT INTO narratives (kind, target_id, content, is_placeholder) VALUES (?1, ?2, ?3, ?4)",
                 )
                 .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-            for (kind, target_id, content) in narratives {
-                stmt.execute(params![kind, target_id, content])
+            for (kind, target_id, content, is_placeholder) in narratives {
+                stmt.execute(params![kind, target_id, content, is_placeholder])
                     .map_err(|e| CodeilusError::Database(Box::new(e)))?;
                 ids.push(tx.last_insert_rowid());
             }
@@ -70,7 +72,7 @@ impl NarrativeRepo {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, target_id, language, content, generated_at FROM narratives WHERE kind = ?1 LIMIT 1",
+                "SELECT id, kind, target_id, language, content, generated_at, is_placeholder FROM narratives WHERE kind = ?1 LIMIT 1",
             )
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         let mut rows = stmt
@@ -82,6 +84,7 @@ impl NarrativeRepo {
                     language: row.get(3)?,
                     content: row.get(4)?,
                     generated_at: row.get(5)?,
+                    is_placeholder: row.get(6)?,
                 })
             })
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -102,7 +105,7 @@ impl NarrativeRepo {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, target_id, language, content, generated_at FROM narratives WHERE kind = ?1 AND target_id = ?2 LIMIT 1",
+                "SELECT id, kind, target_id, language, content, generated_at, is_placeholder FROM narratives WHERE kind = ?1 AND target_id = ?2 LIMIT 1",
             )
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         let mut rows = stmt
@@ -114,6 +117,7 @@ impl NarrativeRepo {
                     language: row.get(3)?,
                     content: row.get(4)?,
                     generated_at: row.get(5)?,
+                    is_placeholder: row.get(6)?,
                 })
             })
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -130,7 +134,7 @@ impl NarrativeRepo {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, target_id, language, content, generated_at FROM narratives",
+                "SELECT id, kind, target_id, language, content, generated_at, is_placeholder FROM narratives",
             )
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         let rows = stmt
@@ -142,6 +146,7 @@ impl NarrativeRepo {
                     language: row.get(3)?,
                     content: row.get(4)?,
                     generated_at: row.get(5)?,
+                    is_placeholder: row.get(6)?,
                 })
             })
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -157,7 +162,7 @@ impl NarrativeRepo {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT id, kind, target_id, language, content, generated_at FROM narratives WHERE kind = ?1",
+                "SELECT id, kind, target_id, language, content, generated_at, is_placeholder FROM narratives WHERE kind = ?1",
             )
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         let rows = stmt
@@ -169,6 +174,7 @@ impl NarrativeRepo {
                     language: row.get(3)?,
                     content: row.get(4)?,
                     generated_at: row.get(5)?,
+                    is_placeholder: row.get(6)?,
                 })
             })
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;

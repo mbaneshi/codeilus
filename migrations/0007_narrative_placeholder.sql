@@ -1,0 +1,1 @@
+ALTER TABLE narratives ADD COLUMN is_placeholder INTEGER NOT NULL DEFAULT 0;

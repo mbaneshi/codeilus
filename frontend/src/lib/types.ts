@@ -69,6 +69,7 @@ export interface NarrativeResponse {
   target_id: number | null;
   content: string;
   generated_at: string;
+  is_placeholder?: boolean;
 }
 
 export interface ChapterSection {
@@ -114,6 +115,12 @@ export interface QuizQuestion {
   question: string;
   options: string[];
   kind: string;
+}
+
+export interface QuizAnswerResult {
+  correct: boolean;
+  xp_earned: number;
+  explanation?: string;
 }
 
 export interface Badge {

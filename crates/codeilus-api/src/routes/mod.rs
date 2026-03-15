@@ -6,6 +6,7 @@ pub mod chapters;
 pub mod files;
 pub mod graph;
 pub mod health;
+pub mod learning;
 pub mod narratives;
 pub mod search;
 pub mod symbols;
@@ -26,4 +27,5 @@ pub fn router() -> Router<AppState> {
         .merge(narratives::router())
         .merge(chapters::router())
         .merge(annotations::router())
+        .merge(learning::router())
 }

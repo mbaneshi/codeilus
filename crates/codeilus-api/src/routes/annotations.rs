@@ -94,10 +94,10 @@ async fn update_annotation(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(body): Json<UpdateRequest>,
-) -> Result<Json<()>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let repo = AnnotationRepo::new(state.db.conn_arc());
     repo.update(id, &body.content)?;
-    Ok(Json(()))
+    Ok(Json(serde_json::json!({ "id": id, "updated": true })))
 }
 
 /// POST /api/v1/annotations/:id/flag
@@ -114,10 +114,10 @@ async fn toggle_flag(
 async fn delete_annotation(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-) -> Result<Json<()>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let repo = AnnotationRepo::new(state.db.conn_arc());
     repo.delete(id)?;
-    Ok(Json(()))
+    Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
 pub fn router() -> Router<AppState> {

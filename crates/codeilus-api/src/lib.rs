@@ -15,7 +15,7 @@ use axum::{
 use http::{header::CONTENT_TYPE, Method, StatusCode};
 use mime_guess::from_path;
 use std::net::SocketAddr;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -24,11 +24,34 @@ use tracing::info;
 #[allow_missing = true]
 struct FrontendAssets;
 
-pub fn app(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
+fn cors_origins() -> CorsLayer {
+    if let Ok(origins) = std::env::var("CODEILUS_CORS_ORIGIN") {
+        let parsed: Vec<http::HeaderValue> = origins
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        if !parsed.is_empty() {
+            return CorsLayer::new()
+                .allow_origin(AllowOrigin::list(parsed))
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
+                .allow_headers([CONTENT_TYPE]);
+        }
+    }
+
+    // Default: restrict to localhost origins
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list([
+            "http://localhost:4174".parse().unwrap(),
+            "http://localhost:5173".parse().unwrap(),
+            "http://127.0.0.1:4174".parse().unwrap(),
+            "http://127.0.0.1:5173".parse().unwrap(),
+        ]))
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
-        .allow_headers([CONTENT_TYPE]);
+        .allow_headers([CONTENT_TYPE])
+}
+
+pub fn app(state: AppState) -> Router {
+    let cors = cors_origins();
 
     Router::new()
         .nest("/api/v1", routes::router())

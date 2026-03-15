@@ -51,6 +51,17 @@ async fn ask_stream(
     State(state): State<AppState>,
     Json(body): Json<AskRequest>,
 ) -> Response {
+    // Rate-limit concurrent LLM requests
+    let _permit = match state.llm_semaphore.try_acquire() {
+        Ok(permit) => permit,
+        Err(_) => {
+            return Json(AskChunk {
+                kind: "error".into(),
+                content: "AI assistant is busy with another request. Please try again in a moment.".into(),
+            }).into_response();
+        }
+    };
+
     if !state.llm.is_available().await {
         return Json(AskChunk {
             kind: "error".into(),

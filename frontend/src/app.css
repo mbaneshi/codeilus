@@ -20,6 +20,16 @@
   --c-success: #34d399;
   --c-warning: #fbbf24;
   --c-danger: #f87171;
+
+  /* Community colors (consistent across graph, sidebar, chapters) */
+  --community-0: #6366f1;
+  --community-1: #ec4899;
+  --community-2: #14b8a6;
+  --community-3: #f59e0b;
+  --community-4: #8b5cf6;
+  --community-5: #06b6d4;
+  --community-6: #f97316;
+  --community-7: #84cc16;
 }
 
 body {

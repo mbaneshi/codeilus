@@ -9,7 +9,7 @@
     submitQuizAnswer,
     markSectionComplete,
   } from '$lib/api';
-  import type { Chapter, ChapterSection, Progress, QuizQuestion } from '$lib/types';
+  import type { Chapter, ChapterSection, Progress, QuizQuestion, QuizAnswerResult } from '$lib/types';
   import {
     BookOpen, ArrowLeft, ArrowRight, Check, CheckCircle, CircleDot,
     Code2, GitBranch, HelpCircle, Loader2, Trophy, Zap, X, Eye,
@@ -30,7 +30,7 @@
   let currentQuestion = $state(0);
   let selectedAnswer = $state<string | null>(null);
   let submitted = $state(false);
-  let lastResult = $state<{ correct: boolean; xp_earned: number } | null>(null);
+  let lastResult = $state<QuizAnswerResult | null>(null);
   let xpAnimation = $state(false);
   let totalQuizXp = $state(0);
   let quizFinished = $state(false);
@@ -479,6 +479,13 @@
         {#if xpAnimation}
           <div class="text-center mb-3 animate-bounce">
             <span class="text-lg font-bold text-amber-400">+{lastResult?.xp_earned} XP!</span>
+          </div>
+        {/if}
+
+        <!-- Explanation -->
+        {#if submitted && lastResult?.explanation}
+          <div class="mb-4 p-3 rounded-lg text-sm leading-relaxed {lastResult.correct ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border border-red-500/20 text-red-300'}">
+            {lastResult.explanation}
           </div>
         {/if}
 

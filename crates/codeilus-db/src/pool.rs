@@ -16,6 +16,7 @@ impl DbPool {
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA foreign_keys = ON;
+             PRAGMA busy_timeout = 5000;
              PRAGMA cache_size = -8000;",
         )
         .map_err(|e| CodeilusError::Database(Box::new(e)))?;

@@ -534,7 +534,7 @@ fn narrative_repo_insert_and_get() {
     let conn = setup();
     let repo = NarrativeRepo::new(conn);
 
-    let id = repo.insert("overview", None, "This is the overview.").unwrap();
+    let id = repo.insert("overview", None, "This is the overview.", false).unwrap();
     assert!(id > 0);
 
     let row = repo.get_by_kind("overview").unwrap();
@@ -542,6 +542,7 @@ fn narrative_repo_insert_and_get() {
     let row = row.unwrap();
     assert_eq!(row.kind, "overview");
     assert_eq!(row.content, "This is the overview.");
+    assert!(!row.is_placeholder);
 }
 
 #[test]
@@ -549,9 +550,9 @@ fn narrative_repo_get_by_kind_and_target() {
     let conn = setup();
     let repo = NarrativeRepo::new(conn);
 
-    repo.insert("module_summary", Some(1), "Summary for community 1")
+    repo.insert("module_summary", Some(1), "Summary for community 1", false)
         .unwrap();
-    repo.insert("module_summary", Some(2), "Summary for community 2")
+    repo.insert("module_summary", Some(2), "Summary for community 2", false)
         .unwrap();
 
     let row = repo.get_by_kind_and_target("module_summary", 1).unwrap();
@@ -568,10 +569,10 @@ fn narrative_repo_list_by_kind() {
     let conn = setup();
     let repo = NarrativeRepo::new(conn);
 
-    repo.insert("module_summary", Some(1), "Summary 1").unwrap();
-    repo.insert("module_summary", Some(2), "Summary 2").unwrap();
-    repo.insert("module_summary", Some(3), "Summary 3").unwrap();
-    repo.insert("overview", None, "Overview").unwrap();
+    repo.insert("module_summary", Some(1), "Summary 1", false).unwrap();
+    repo.insert("module_summary", Some(2), "Summary 2", false).unwrap();
+    repo.insert("module_summary", Some(3), "Summary 3", false).unwrap();
+    repo.insert("overview", None, "Overview", false).unwrap();
 
     let summaries = repo.list_by_kind("module_summary").unwrap();
     assert_eq!(summaries.len(), 3);

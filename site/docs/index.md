@@ -9,7 +9,8 @@
     ---
 
     ```bash
-    cargo install codeilus
+    git clone https://github.com/codeilus/codeilus.git
+    cd codeilus && cargo install --path crates/codeilus-app
     codeilus ./any-repo
     # Open http://localhost:4174
     ```

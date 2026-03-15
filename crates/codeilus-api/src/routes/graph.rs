@@ -1,15 +1,27 @@
 //! Graph, community, and process API routes.
 
-use axum::extract::State;
+use std::collections::HashSet;
+
+use axum::extract::{Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use codeilus_core::error::CodeilusError;
 use rusqlite::params;
 
 use crate::error::ApiError;
 use crate::state::AppState;
+
+const DEFAULT_NODE_LIMIT: usize = 500;
+const MAX_NODE_LIMIT: usize = 2000;
+
+#[derive(Deserialize)]
+pub struct GraphQuery {
+    pub community_id: Option<i64>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
 
 #[derive(Serialize)]
 pub struct GraphResponse {
@@ -59,24 +71,34 @@ pub struct ProcessStepResponse {
     pub description: String,
 }
 
-/// GET /api/v1/graph — Full graph (nodes + edges)
+/// GET /api/v1/graph — Paginated graph (nodes + edges)
+///
+/// Query parameters:
+/// - `community_id` — filter to nodes in this community
+/// - `limit` — max nodes to return (default 500, max 2000)
+/// - `offset` — pagination offset (default 0)
 async fn get_graph(
     State(state): State<AppState>,
+    Query(query): Query<GraphQuery>,
 ) -> Result<Json<GraphResponse>, ApiError> {
     let conn = state.db.connection();
 
-    // Load all symbols as graph nodes, with optional community membership
-    let mut nodes = Vec::new();
-    {
+    let limit = query.limit.unwrap_or(DEFAULT_NODE_LIMIT).min(MAX_NODE_LIMIT);
+    let offset = query.offset.unwrap_or(0);
+
+    // Load symbols as graph nodes, with optional community filter and pagination
+    let nodes = if let Some(cid) = query.community_id {
         let mut stmt = conn
             .prepare(
                 "SELECT s.id, s.name, s.kind, s.file_id, cm.community_id \
                  FROM symbols s \
-                 LEFT JOIN community_members cm ON cm.symbol_id = s.id",
+                 INNER JOIN community_members cm ON cm.symbol_id = s.id \
+                 WHERE cm.community_id = ?1 \
+                 LIMIT ?2 OFFSET ?3",
             )
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         let rows = stmt
-            .query_map([], |row| {
+            .query_map(params![cid, limit as i64, offset as i64], |row| {
                 Ok(GraphNodeResponse {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -86,12 +108,36 @@ async fn get_graph(
                 })
             })
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-        for row in rows {
-            nodes.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
-        }
-    }
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?
+    } else {
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.id, s.name, s.kind, s.file_id, cm.community_id \
+                 FROM symbols s \
+                 LEFT JOIN community_members cm ON cm.symbol_id = s.id \
+                 LIMIT ?1 OFFSET ?2",
+            )
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        let rows = stmt
+            .query_map(params![limit as i64, offset as i64], |row| {
+                Ok(GraphNodeResponse {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    file_id: row.get(3)?,
+                    community_id: row.get(4)?,
+                })
+            })
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?
+    };
 
-    // Load all edges
+    // Build a set of returned node IDs so we only return edges within the node set
+    let node_ids: HashSet<i64> = nodes.iter().map(|n| n.id).collect();
+
+    // Load edges, filtering to only those between returned nodes
     let mut edges = Vec::new();
     {
         let mut stmt = conn
@@ -108,7 +154,10 @@ async fn get_graph(
             })
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         for row in rows {
-            edges.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
+            let edge = row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            if node_ids.contains(&edge.source_id) && node_ids.contains(&edge.target_id) {
+                edges.push(edge);
+            }
         }
     }
 
@@ -146,8 +195,8 @@ async fn list_communities(
         let members: Vec<i64> = member_stmt
             .query_map(params![id], |row| row.get(0))
             .map_err(|e| CodeilusError::Database(Box::new(e)))?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
 
         communities.push(CommunityResponse {
             id,
@@ -206,8 +255,8 @@ async fn list_processes(
                 })
             })
             .map_err(|e| CodeilusError::Database(Box::new(e)))?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
 
         processes.push(ProcessResponse {
             id,

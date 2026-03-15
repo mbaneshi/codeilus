@@ -8,7 +8,7 @@ use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
 use codeilus_api::{app, AppState};
-use codeilus_core::EventBus;
+use codeilus_core::{CodeilusConfig, EventBus};
 use codeilus_db::{CommunityRepo, DbPool, EdgeRepo, FileRepo, Migrator, SymbolRepo};
 use codeilus_graph::GraphBuilder;
 use codeilus_parse::{ParseConfig, parse_repository};
@@ -32,7 +32,8 @@ fn setup_db() -> Arc<DbPool> {
 fn setup_state(db: Arc<DbPool>) -> AppState {
     let event_bus = Arc::new(EventBus::new(16));
     let llm: Arc<dyn codeilus_llm::LlmProvider> = Arc::new(codeilus_llm::ClaudeCli::new());
-    AppState::new(db, event_bus, llm)
+    let config = Arc::new(CodeilusConfig::default());
+    AppState::new(db, event_bus, llm, config)
 }
 
 /// Store parsed files and symbols into the DB; returns the DB pool.
@@ -249,7 +250,8 @@ async fn source_endpoint_with_repo_root() {
 
     let event_bus = Arc::new(EventBus::new(16));
     let llm: Arc<dyn codeilus_llm::LlmProvider> = Arc::new(codeilus_llm::ClaudeCli::new());
-    let state = AppState::new(db, event_bus, llm).with_repo_root(repo_root);
+    let config = Arc::new(CodeilusConfig::default());
+    let state = AppState::new(db, event_bus, llm, config).with_repo_root(repo_root);
 
     let (status, body) = get_json(
         &state,

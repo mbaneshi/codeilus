@@ -69,11 +69,20 @@ pub fn create_provider(config: &LlmConfig) -> Arc<dyn LlmProvider> {
 /// Auto-detect the best available provider.
 ///
 /// Resolution order:
+/// 0. `CODEILUS_SKIP_LLM` env var — if "1" or "true", return a no-op provider
 /// 1. `CODEILUS_LLM_PROVIDER` env var (if set)
 /// 2. Claude Code CLI (if `claude` binary found)
 /// 3. Anthropic API (if `ANTHROPIC_API_KEY` set)
 /// 4. Falls back to Claude Code CLI (will error on use)
 pub async fn auto_detect_provider() -> Arc<dyn LlmProvider> {
+    // Check skip flag first
+    if let Ok(val) = std::env::var("CODEILUS_SKIP_LLM") {
+        if val == "1" || val.eq_ignore_ascii_case("true") {
+            info!("LLM disabled via CODEILUS_SKIP_LLM");
+            return Arc::new(NoOpProvider);
+        }
+    }
+
     // Check env var override
     if let Ok(kind) = std::env::var("CODEILUS_LLM_PROVIDER") {
         match kind.to_lowercase().as_str() {
@@ -114,6 +123,39 @@ pub async fn auto_detect_provider() -> Arc<dyn LlmProvider> {
     // Default to Claude Code CLI even if unavailable (will error on use)
     tracing::warn!("No LLM provider detected — LLM features will be unavailable");
     Arc::new(ClaudeCli::with_timeout(180))
+}
+
+// ---------------------------------------------------------------------------
+// No-op provider — returned when CODEILUS_SKIP_LLM is set
+// ---------------------------------------------------------------------------
+
+/// Provider that always errors. Used when LLM is explicitly disabled.
+struct NoOpProvider;
+
+#[async_trait]
+impl LlmProvider for NoOpProvider {
+    fn name(&self) -> &str {
+        "none (disabled)"
+    }
+
+    async fn is_available(&self) -> bool {
+        false
+    }
+
+    async fn prompt(&self, _request: &LlmRequest) -> CodeilusResult<LlmResponse> {
+        Err(CodeilusError::Llm(
+            "LLM disabled via CODEILUS_SKIP_LLM".to_string(),
+        ))
+    }
+
+    async fn prompt_stream(
+        &self,
+        _request: &LlmRequest,
+    ) -> CodeilusResult<tokio::sync::mpsc::Receiver<LlmEvent>> {
+        Err(CodeilusError::Llm(
+            "LLM disabled via CODEILUS_SKIP_LLM".to_string(),
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------

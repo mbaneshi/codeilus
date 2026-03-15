@@ -3,7 +3,7 @@ use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
 use codeilus_api::{app, AppState};
-use codeilus_core::EventBus;
+use codeilus_core::{CodeilusConfig, EventBus};
 use codeilus_db::{DbPool, FileRepo, Migrator, SymbolRepo};
 use std::sync::Arc;
 
@@ -16,7 +16,8 @@ fn setup() -> AppState {
     let db = Arc::new(db);
     let event_bus = Arc::new(EventBus::new(16));
     let llm: Arc<dyn codeilus_llm::LlmProvider> = Arc::new(codeilus_llm::ClaudeCli::new());
-    AppState::new(db, event_bus, llm)
+    let config = Arc::new(CodeilusConfig::default());
+    AppState::new(db, event_bus, llm, config)
 }
 
 async fn get_json(state: &AppState, uri: &str) -> (StatusCode, serde_json::Value) {

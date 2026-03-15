@@ -35,18 +35,19 @@ fn seed_db(db: &DbPool) {
 
     // Narratives
     let narr_repo = codeilus_db::NarrativeRepo::new(conn.clone());
-    narr_repo.insert("overview", None, "This is a test project for export.").unwrap();
-    narr_repo.insert("architecture", None, "The architecture has two modules.").unwrap();
+    narr_repo.insert("overview", None, "This is a test project for export.", false).unwrap();
+    narr_repo.insert("architecture", None, "The architecture has two modules.", false).unwrap();
     narr_repo
         .insert(
             "reading_order",
             None,
             "1. src/main.rs — The entry point\n2. src/lib.rs — Core library",
+            false,
         )
         .unwrap();
-    narr_repo.insert("extension_guide", None, "Add new modules in src/.").unwrap();
-    narr_repo.insert("contribution_guide", None, "Fork and submit PRs.").unwrap();
-    narr_repo.insert("why_trending", None, "Great developer experience.").unwrap();
+    narr_repo.insert("extension_guide", None, "Add new modules in src/.", false).unwrap();
+    narr_repo.insert("contribution_guide", None, "Fork and submit PRs.", false).unwrap();
+    narr_repo.insert("why_trending", None, "Great developer experience.", false).unwrap();
 
     // Communities
     let comm_repo = codeilus_db::CommunityRepo::new(conn.clone());
@@ -56,10 +57,10 @@ fn seed_db(db: &DbPool) {
 
     // Module summaries for communities
     narr_repo
-        .insert("module_summary", Some(cids[0].0), "Core module handles main logic.")
+        .insert("module_summary", Some(cids[0].0), "Core module handles main logic.", false)
         .unwrap();
     narr_repo
-        .insert("module_summary", Some(cids[1].0), "Utils provides helper functions.")
+        .insert("module_summary", Some(cids[1].0), "Utils provides helper functions.", false)
         .unwrap();
 
     // Patterns

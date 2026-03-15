@@ -61,7 +61,7 @@ graph TD
 
 | Crate | Purpose |
 |---|---|
-| `codeilus-parse` | Tree-sitter parsing for 12 languages. Extracts symbols, imports, calls, heritage. |
+| `codeilus-parse` | Tree-sitter parsing for 6 languages (Python, TypeScript, JavaScript, Rust, Go, Java); 7 more defined but pending grammar integration. Extracts symbols, imports, calls, heritage. |
 | `codeilus-graph` | Knowledge graph: call graph, dependency graph, heritage, communities (Louvain), entry points, execution flows. |
 | `codeilus-metrics` | SLOC, fan-in/out, complexity, modularity, TF-IDF, git churn, heatmaps. |
 | `codeilus-analyze` | Anti-pattern detection: god classes, long methods, circular deps, security hotspots. |
@@ -82,7 +82,7 @@ graph TD
 |---|---|
 | `codeilus-harvest` | GitHub trending scraper, shallow clone queue, repo fingerprinting. |
 | `codeilus-export` | Static single-HTML renderer with all data inlined. |
-| `codeilus-mcp` | MCP stdio server with 8 tools for AI agent integration. |
+| `codeilus-mcp` | MCP stdio server with 16 tools for AI agent integration (query, context, impact, explain, diagram, metrics, learning, and more). |
 
 ### Frontend
 

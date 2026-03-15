@@ -17,6 +17,7 @@ pub struct NarrativeResponse {
     pub target_id: Option<i64>,
     pub content: String,
     pub generated_at: String,
+    pub is_placeholder: bool,
 }
 
 /// GET /api/v1/narratives — List all narratives
@@ -34,6 +35,7 @@ async fn list_narratives(
                 target_id: r.target_id,
                 content: r.content,
                 generated_at: r.generated_at,
+                is_placeholder: r.is_placeholder,
             })
             .collect(),
     ))
@@ -53,6 +55,7 @@ async fn get_by_kind(
         target_id: r.target_id,
         content: r.content,
         generated_at: r.generated_at,
+        is_placeholder: r.is_placeholder,
     })))
 }
 
@@ -70,6 +73,7 @@ async fn get_by_kind_and_target(
         target_id: r.target_id,
         content: r.content,
         generated_at: r.generated_at,
+        is_placeholder: r.is_placeholder,
     })))
 }
 

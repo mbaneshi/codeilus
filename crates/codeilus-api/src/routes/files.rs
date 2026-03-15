@@ -76,18 +76,35 @@ async fn get_file_source(
     let repo = FileRepo::new(state.db.conn_arc());
     let file = repo.get(FileId(id))?;
 
+    let repo_root = state.repo_root.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::BAD_REQUEST,
+        message: "No repository has been analyzed".to_string(),
+    })?;
+
     // Resolve the file path relative to repo root
     let clean_path = file.path.strip_prefix("./").unwrap_or(&file.path);
-    let full_path = if let Some(ref root) = state.repo_root {
-        root.join(clean_path)
-    } else {
-        std::path::PathBuf::from(clean_path)
-    };
+    let full_path = repo_root.join(clean_path);
 
-    let content = std::fs::read_to_string(&full_path).map_err(|e| {
+    // Canonicalize and verify the path stays within repo root (prevent path traversal)
+    let canonical = full_path.canonicalize().map_err(|e| ApiError {
+        status: StatusCode::NOT_FOUND,
+        message: format!("Could not resolve file path: {}", e),
+    })?;
+    let canonical_root = repo_root.canonicalize().map_err(|e| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: format!("Could not resolve repo root: {}", e),
+    })?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err(ApiError {
+            status: StatusCode::FORBIDDEN,
+            message: "Path traversal detected".to_string(),
+        });
+    }
+
+    let content = std::fs::read_to_string(&canonical).map_err(|e| {
         ApiError {
             status: StatusCode::NOT_FOUND,
-            message: format!("Could not read file {}: {}", full_path.display(), e),
+            message: format!("Could not read file {}: {}", canonical.display(), e),
         }
     })?;
 

@@ -8,6 +8,9 @@ const MIGRATION_001: &str = include_str!("../../../migrations/0001_init.sql");
 const MIGRATION_002: &str = include_str!("../../../migrations/0002_fts5.sql");
 const MIGRATION_003: &str = include_str!("../../../migrations/0003_quiz_columns.sql");
 const MIGRATION_004: &str = include_str!("../../../migrations/0004_annotations.sql");
+const MIGRATION_005: &str = include_str!("../../../migrations/0005_progress_unique.sql");
+const MIGRATION_006: &str = include_str!("../../../migrations/0006_seed_badges.sql");
+const MIGRATION_007: &str = include_str!("../../../migrations/0007_narrative_placeholder.sql");
 
 pub struct Migrator<'a> {
     conn: &'a Connection,
@@ -90,6 +93,51 @@ impl<'a> Migrator<'a> {
                 .map_err(|e| CodeilusError::Database(Box::new(e)))?;
             applied += 1;
             info!("migration 0004 applied, now at version 4");
+        }
+
+        if current < 5 {
+            info!("applying migration 0005_progress_unique.sql");
+            self.conn
+                .execute_batch(MIGRATION_005)
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version) VALUES (5)",
+                    [],
+                )
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            applied += 1;
+            info!("migration 0005 applied, now at version 5");
+        }
+
+        if current < 6 {
+            info!("applying migration 0006_seed_badges.sql");
+            self.conn
+                .execute_batch(MIGRATION_006)
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version) VALUES (6)",
+                    [],
+                )
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            applied += 1;
+            info!("migration 0006 applied, now at version 6");
+        }
+
+        if current < 7 {
+            info!("applying migration 0007_narrative_placeholder.sql");
+            self.conn
+                .execute_batch(MIGRATION_007)
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version) VALUES (7)",
+                    [],
+                )
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            applied += 1;
+            info!("migration 0007 applied, now at version 7");
         }
 
         if applied == 0 {

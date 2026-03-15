@@ -723,9 +723,22 @@
     });
   });
 
-  // Update graph data when filters change
+  // Update graph data when filters change (not on initial load)
+  let filtersApplied = false;
   $effect(() => {
+    // Read filter deps to subscribe
+    const _sc = selectedCommunity;
+    const _sk = selectedKinds;
+    const _sq = searchQuery;
+
     if (!graph3d || loading) return;
+
+    // Skip the first run — the init $effect already set the data
+    if (!filtersApplied) {
+      filtersApplied = true;
+      return;
+    }
+
     const data = filteredData;
     graph3d.graphData({
       nodes: data.nodes.map((n: GraphNode) => ({
@@ -746,7 +759,8 @@
   });
 </script>
 
-<div class="graph-page" bind:this={containerEl}>
+<div class="graph-page">
+  <div class="graph-canvas" bind:this={containerEl}></div>
   {#if loading}
     <div class="absolute inset-0 flex items-center justify-center z-30 bg-[#0a0a1a]">
       <div class="text-center">
@@ -1592,6 +1606,11 @@
   .graph-page {
     @apply relative w-full h-full overflow-hidden;
     background: #0a0a1a;
+  }
+
+  .graph-canvas {
+    @apply absolute inset-0;
+    z-index: 0;
   }
 
   /* -- Sidebar -- */

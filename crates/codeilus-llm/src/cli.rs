@@ -70,9 +70,20 @@ impl ClaudeCli {
         }
     }
 
+    /// Maximum prompt size (100 KB) to prevent resource exhaustion.
+    const MAX_PROMPT_BYTES: usize = 100 * 1024;
+
     /// Run a prompt and return the full response.
     /// Retries once on error (timeout, non-zero exit, or garbage response) after a 2s delay.
     pub async fn prompt(&self, request: &LlmRequest) -> CodeilusResult<LlmResponse> {
+        if request.prompt.len() > Self::MAX_PROMPT_BYTES {
+            return Err(CodeilusError::Validation(format!(
+                "Prompt too large ({} bytes, max {})",
+                request.prompt.len(),
+                Self::MAX_PROMPT_BYTES
+            )));
+        }
+
         if !self.is_available().await {
             return Err(CodeilusError::Llm(
                 "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"
@@ -174,6 +185,14 @@ impl ClaudeCli {
         &self,
         request: &LlmRequest,
     ) -> CodeilusResult<tokio::sync::mpsc::Receiver<LlmEvent>> {
+        if request.prompt.len() > Self::MAX_PROMPT_BYTES {
+            return Err(CodeilusError::Validation(format!(
+                "Prompt too large ({} bytes, max {})",
+                request.prompt.len(),
+                Self::MAX_PROMPT_BYTES
+            )));
+        }
+
         if !self.is_available().await {
             return Err(CodeilusError::Llm(
                 "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"

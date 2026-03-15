@@ -108,7 +108,7 @@ export async function fetchQuiz(chapterId: number): Promise<import('$lib/types')
   return get(`${BASE}/chapters/${chapterId}/quiz`, []);
 }
 
-export async function submitQuizAnswer(questionId: number, answer: string): Promise<{ correct: boolean; xp_earned: number }> {
+export async function submitQuizAnswer(questionId: number, answer: string): Promise<import('$lib/types').QuizAnswerResult> {
   try {
     const res = await fetch(`${BASE}/quiz/${questionId}/answer`, {
       method: 'POST',
