@@ -16,6 +16,7 @@ codeilus-graph = { path = "../codeilus-graph" }
 codeilus-metrics = { path = "../codeilus-metrics" }
 codeilus-analyze = { path = "../codeilus-analyze" }
 codeilus-diagram = { path = "../codeilus-diagram" }
+codeilus-llm = { path = "../codeilus-llm" }
 codeilus-narrate = { path = "../codeilus-narrate" }
 codeilus-learn = { path = "../codeilus-learn" }
 codeilus-harvest = { path = "../codeilus-harvest" }

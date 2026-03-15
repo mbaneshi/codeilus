@@ -36,22 +36,28 @@ struct AskChunk {
 #[derive(Serialize)]
 struct LlmStatus {
     available: bool,
+    provider: String,
 }
 
-async fn check_llm() -> Json<LlmStatus> {
-    let available = codeilus_llm::is_available().await;
-    Json(LlmStatus { available })
+async fn check_llm(State(state): State<AppState>) -> Json<LlmStatus> {
+    let available = state.llm.is_available().await;
+    Json(LlmStatus {
+        available,
+        provider: state.llm.name().to_string(),
+    })
 }
 
 async fn ask_stream(
     State(state): State<AppState>,
     Json(body): Json<AskRequest>,
 ) -> Response {
-    let available = codeilus_llm::is_available().await;
-    if !available {
+    if !state.llm.is_available().await {
         return Json(AskChunk {
             kind: "error".into(),
-            content: "Claude Code CLI not found. Install it with: npm install -g @anthropic-ai/claude-code".into(),
+            content: format!(
+                "LLM provider '{}' is not available. Check your setup.",
+                state.llm.name()
+            ),
         }).into_response();
     }
 
@@ -107,12 +113,13 @@ async fn ask_stream(
         max_tokens: Some(2048),
     };
 
-    info!(question = %body.question, "LLM ask request");
+    info!(question = %body.question, provider = state.llm.name(), "LLM ask request");
 
+    let llm = state.llm.clone();
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(32);
 
     tokio::spawn(async move {
-        match codeilus_llm::prompt(request).await {
+        match llm.prompt(&request).await {
             Ok(response) => {
                 // Send the full response as chunks for SSE
                 let _ = tx.send(Ok(Event::default()
@@ -131,11 +138,32 @@ async fn ask_stream(
                 )).await;
             }
             Err(e) => {
+                let err_str = e.to_string();
+                let user_message = if err_str.contains("billing")
+                    || err_str.contains("rate-limit")
+                    || err_str.contains("Credit balance")
+                    || err_str.contains("quota")
+                {
+                    "The AI assistant is temporarily unavailable due to rate limits or billing. \
+                     Please try again in a few minutes, or check your Claude CLI credits with `claude auth`."
+                        .to_string()
+                } else if err_str.contains("not found") {
+                    "Claude Code CLI is not installed. Install it with: `npm install -g @anthropic-ai/claude-code`, \
+                     then run `claude auth` to set up authentication."
+                        .to_string()
+                } else if err_str.contains("timed out") {
+                    "The AI request timed out. This may happen with large codebases. \
+                     Try asking a more specific question."
+                        .to_string()
+                } else {
+                    format!("AI assistant error: {}. Try again or check your Claude CLI setup with `claude auth`.", err_str)
+                };
+
                 let _ = tx.send(Ok(Event::default()
                     .event("error")
                     .data(serde_json::to_string(&AskChunk {
                         kind: "error".into(),
-                        content: format!("LLM error: {}", e),
+                        content: user_message,
                     }).unwrap())
                 )).await;
             }

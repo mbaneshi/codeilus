@@ -1,20 +1,33 @@
 //! Claude CLI subprocess management.
 
+use async_trait::async_trait;
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, warn};
 
+use crate::provider::LlmProvider;
 use crate::stream_parser::{is_message_stop, parse_stream_line, StreamAccumulator};
 use crate::types::{LlmEvent, LlmRequest, LlmResponse};
 
 /// Phrases in LLM responses that indicate a billing/rate-limit error rather than real content.
 const GARBAGE_PHRASES: &[&str] = &[
     "Credit balance",
+    "credit balance",
     "rate limit",
-    "too many requests",
     "Rate limit",
+    "rate_limit",
+    "too many requests",
     "Too many requests",
+    "billing",
+    "quota exceeded",
+    "insufficient_quota",
+    "overloaded",
+    "capacity",
+    "try again later",
+    "exceeded your",
+    "usage limit",
+    "account balance",
 ];
 
 /// Check if an LLM response looks like a billing/rate-limit error.
@@ -239,6 +252,28 @@ impl ClaudeCli {
 impl Default for ClaudeCli {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[async_trait]
+impl LlmProvider for ClaudeCli {
+    fn name(&self) -> &str {
+        "Claude Code CLI"
+    }
+
+    async fn is_available(&self) -> bool {
+        self.is_available().await
+    }
+
+    async fn prompt(&self, request: &LlmRequest) -> CodeilusResult<LlmResponse> {
+        self.prompt(request).await
+    }
+
+    async fn prompt_stream(
+        &self,
+        request: &LlmRequest,
+    ) -> CodeilusResult<tokio::sync::mpsc::Receiver<LlmEvent>> {
+        self.prompt_stream(request).await
     }
 }
 

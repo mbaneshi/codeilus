@@ -94,6 +94,7 @@ async fn run_analyze(
     path: &Path,
     db: &Arc<DbPool>,
     event_bus: &Arc<EventBus>,
+    llm: &Arc<dyn codeilus_llm::LlmProvider>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(path = %path.display(), "analyzing codebase");
 
@@ -233,7 +234,7 @@ async fn run_analyze(
 
     // 7. NARRATE
     info!("Step 7/8: Generating narratives...");
-    match codeilus_narrate::generate_all_narratives(&graph, &parsed_files, path).await {
+    match codeilus_narrate::generate_all_narratives(&graph, &parsed_files, path, Arc::clone(llm)).await {
         Ok(narratives) => {
             // Persist narratives
             let narrative_repo = NarrativeRepo::new(db.conn_arc());
@@ -365,6 +366,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db = Arc::new(db);
     let event_bus = Arc::new(EventBus::new(256));
 
+    // Initialize LLM provider (auto-detect best available)
+    let llm_provider = codeilus_llm::auto_detect_provider().await;
+    info!(provider = llm_provider.name(), "LLM provider initialized");
+
     // Wire BatchWriter to EventBus
     let batch_writer = Arc::new(BatchWriter::spawn(db.conn_arc()));
     let bw = Arc::clone(&batch_writer);
@@ -388,7 +393,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    let mut state = AppState::new(Arc::clone(&db), Arc::clone(&event_bus));
+    let mut state = AppState::new(Arc::clone(&db), Arc::clone(&event_bus), Arc::clone(&llm_provider));
 
     match cli.command {
         Some(Command::Serve { port }) => {
@@ -398,7 +403,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             serve_until_signal(addr, state, shutdown_signal()).await?;
         }
         Some(Command::Analyze { path }) => {
-            run_analyze(&path, &db, &event_bus).await?;
+            run_analyze(&path, &db, &event_bus, &llm_provider).await?;
         }
         Some(Command::Harvest { trending, date, languages }) => {
             if !trending {
@@ -452,7 +457,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         None => {
             // Default: if path given, analyze + serve; otherwise just serve
             if let Some(ref repo_path) = cli.path {
-                run_analyze(repo_path, &db, &event_bus).await?;
+                run_analyze(repo_path, &db, &event_bus, &llm_provider).await?;
                 state = state.with_repo_root(std::fs::canonicalize(repo_path)?);
             } else {
                 state = state.with_repo_root(std::env::current_dir()?);

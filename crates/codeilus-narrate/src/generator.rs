@@ -4,7 +4,8 @@ use crate::types::Narrative;
 use codeilus_core::types::NarrativeKind;
 use codeilus_core::CodeilusResult;
 use codeilus_graph::KnowledgeGraph;
-use codeilus_llm::{build_context, ClaudeCli, ContextFocus, LlmRequest};
+use codeilus_llm::{build_context, ContextFocus, LlmProvider, LlmRequest};
+use std::sync::Arc;
 use codeilus_parse::ParsedFile;
 use std::path::Path;
 use tracing::{info, warn};
@@ -13,41 +14,37 @@ use tracing::{info, warn};
 const MODULE_BATCH_SIZE: usize = 5;
 
 pub struct NarrativeGenerator {
-    cli: ClaudeCli,
+    llm: Arc<dyn LlmProvider>,
     llm_available: bool,
 }
 
 impl NarrativeGenerator {
-    pub async fn new() -> Self {
+    pub async fn new(llm: Arc<dyn LlmProvider>) -> Self {
         // Check CODEILUS_SKIP_LLM env var
         let skip_llm = std::env::var("CODEILUS_SKIP_LLM")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
 
-        let cli = ClaudeCli::with_timeout(180);
         let llm_available = if skip_llm {
             info!("CODEILUS_SKIP_LLM=1 — skipping all LLM calls");
             false
         } else {
-            let avail = cli.is_available().await;
+            let avail = llm.is_available().await;
             if avail {
-                info!("Claude CLI detected — narratives will use LLM");
+                info!(provider = llm.name(), "LLM provider detected — narratives will use LLM");
             } else {
-                warn!("Claude CLI not found — narratives will use placeholders");
+                warn!(provider = llm.name(), "LLM provider not available — narratives will use placeholders");
             }
             avail
         };
 
-        Self {
-            cli,
-            llm_available,
-        }
+        Self { llm, llm_available }
     }
 
     /// Force placeholder mode (for testing or when LLM is not wanted).
-    pub fn placeholder_only() -> Self {
+    pub fn placeholder_only(llm: Arc<dyn LlmProvider>) -> Self {
         Self {
-            cli: ClaudeCli::new(),
+            llm,
             llm_available: false,
         }
     }
@@ -186,7 +183,7 @@ impl NarrativeGenerator {
                 "generating batched module summaries via Claude CLI"
             );
 
-            match self.cli.prompt(&request).await {
+            match self.llm.prompt(&request).await {
                 Ok(response) => {
                     // Parse the batched response — split by "## Community <id>" headers
                     let sections = split_batched_response(&response.text, &community_ids);
@@ -307,7 +304,7 @@ impl NarrativeGenerator {
 
         info!(kind = ?kind, target_id, "generating narrative via Claude CLI");
 
-        match self.cli.prompt(&request).await {
+        match self.llm.prompt(&request).await {
             Ok(response) => {
                 info!(kind = ?kind, target_id, tokens = response.tokens_used, "narrative generated via LLM");
                 Ok(Narrative {
@@ -320,12 +317,12 @@ impl NarrativeGenerator {
             }
             Err(e) => {
                 warn!(kind = ?kind, error = %e, "LLM failed, falling back to placeholder");
+                let content = placeholders::placeholder_for(kind, graph, parsed_files, target_id);
                 Ok(Narrative {
                     kind,
                     target_id,
                     title,
-                    content: "Narrative generation failed — run codeilus analyze again to retry"
-                        .to_string(),
+                    content,
                     is_placeholder: true,
                 })
             }
