@@ -40,15 +40,15 @@
 
   let chapterId = $derived(Number($page.params.id));
 
-  let chapterProgress = $derived(() => {
+  let chapterProgress = $derived.by(() => {
     if (!chapter || chapter.sections.length === 0) return 0;
     const completed = progress.filter(p => p.chapter_id === chapterId && p.completed).length;
     return Math.round((completed / chapter.sections.length) * 100);
   });
 
-  let isSectionCompleted = $derived((sectionId: number) => {
+  function isSectionCompleted(sectionId: number): boolean {
     return progress.some(p => p.chapter_id === chapterId && p.section_id === sectionId && p.completed);
-  });
+  }
 
   let nextChapter = $derived(
     allChapters.find(c => chapter && c.order_index === chapter.order_index + 1) ?? null
@@ -206,12 +206,12 @@
       <div class="flex items-center gap-3">
         <div class="flex-1 bg-[var(--surface-3)] rounded-full h-2.5">
           <div
-            class="h-full rounded-full transition-all duration-500 {chapterProgress() === 100 ? 'bg-emerald-400' : 'bg-[var(--c-accent)]'}"
-            style="width: {chapterProgress()}%"
+            class="h-full rounded-full transition-all duration-500 {chapterProgress === 100 ? 'bg-emerald-400' : 'bg-[var(--c-accent)]'}"
+            style="width: {chapterProgress}%"
           ></div>
         </div>
-        <span class="text-sm font-medium text-[var(--c-text-secondary)] tabular-nums">{chapterProgress()}%</span>
-        {#if chapterProgress() === 100}
+        <span class="text-sm font-medium text-[var(--c-text-secondary)] tabular-nums">{chapterProgress}%</span>
+        {#if chapterProgress === 100}
           <Trophy size={16} class="text-amber-400" />
         {/if}
       </div>
@@ -381,7 +381,7 @@
     </div>
 
     <!-- Next chapter button (when 100% complete) -->
-    {#if chapterProgress() === 100 && nextChapter}
+    {#if chapterProgress === 100 && nextChapter}
       <div class="mt-6 text-center">
         <a
           href="/learn/{nextChapter.id}"

@@ -588,11 +588,7 @@
           }
           return edgeInfo?.color ?? '#4b5563';
         })
-        .linkOpacity((link: any) => {
-          // Feature 6: Confidence-based opacity
-          const conf = link.confidence ?? 1;
-          return 0.2 + conf * 0.5;
-        })
+        .linkOpacity(0.5)
         .linkWidth((link: any) => {
           if (highlightedNodes.size > 0) {
             const sId = link.source?.id ?? link.source;
@@ -1573,11 +1569,10 @@
         </div>
       {/if}
 
-      {@const keyConcepts = learnModalChapter.sections.find(s => s.kind === 'key_concepts')}
-      {#if keyConcepts?.content}
+      {#if learnModalChapter.sections.find(s => s.kind === 'key_concepts')?.content}
         <div class="mb-4 bg-[var(--surface-2)] rounded-lg p-4">
           <h3 class="text-xs font-semibold text-[var(--c-text-muted)] uppercase tracking-wider mb-2">Key Concepts</h3>
-          <Markdown content={keyConcepts.content} />
+          <Markdown content={learnModalChapter.sections.find(s => s.kind === 'key_concepts')?.content ?? ''} />
         </div>
       {/if}
 

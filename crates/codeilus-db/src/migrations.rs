@@ -7,6 +7,7 @@ use tracing::info;
 const MIGRATION_001: &str = include_str!("../../../migrations/0001_init.sql");
 const MIGRATION_002: &str = include_str!("../../../migrations/0002_fts5.sql");
 const MIGRATION_003: &str = include_str!("../../../migrations/0003_quiz_columns.sql");
+const MIGRATION_004: &str = include_str!("../../../migrations/0004_annotations.sql");
 
 pub struct Migrator<'a> {
     conn: &'a Connection,
@@ -74,6 +75,21 @@ impl<'a> Migrator<'a> {
                 .map_err(|e| CodeilusError::Database(Box::new(e)))?;
             applied += 1;
             info!("migration 0003 applied, now at version 3");
+        }
+
+        if current < 4 {
+            info!("applying migration 0004_annotations.sql");
+            self.conn
+                .execute_batch(MIGRATION_004)
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version) VALUES (4)",
+                    [],
+                )
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            applied += 1;
+            info!("migration 0004 applied, now at version 4");
         }
 
         if applied == 0 {

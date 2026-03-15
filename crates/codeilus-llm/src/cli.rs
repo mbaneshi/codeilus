@@ -118,8 +118,11 @@ impl ClaudeCli {
             cmd.arg("--system-prompt").arg(system);
         }
 
-        // Unset CLAUDECODE env var to allow nested Claude CLI invocations
+        // Unset CLAUDECODE to allow nested invocations, and ANTHROPIC_API_KEY
+        // so the CLI uses the user's claude.ai subscription instead of a
+        // potentially rate-limited/exhausted API key.
         cmd.env_remove("CLAUDECODE");
+        cmd.env_remove("ANTHROPIC_API_KEY");
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
@@ -189,8 +192,11 @@ impl ClaudeCli {
             cmd.arg("--system-prompt").arg(system);
         }
 
-        // Unset CLAUDECODE env var to allow nested Claude CLI invocations
+        // Unset CLAUDECODE to allow nested invocations, and ANTHROPIC_API_KEY
+        // so the CLI uses the user's claude.ai subscription instead of a
+        // potentially rate-limited/exhausted API key.
         cmd.env_remove("CLAUDECODE");
+        cmd.env_remove("ANTHROPIC_API_KEY");
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 

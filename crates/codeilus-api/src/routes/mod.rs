@@ -1,5 +1,6 @@
 //! API route definitions.
 
+pub mod annotations;
 pub mod ask;
 pub mod chapters;
 pub mod files;
@@ -24,4 +25,5 @@ pub fn router() -> Router<AppState> {
         .merge(ask::router())
         .merge(narratives::router())
         .merge(chapters::router())
+        .merge(annotations::router())
 }

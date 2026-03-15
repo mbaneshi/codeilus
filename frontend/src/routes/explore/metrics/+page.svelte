@@ -24,7 +24,7 @@
 
   let totalFiles = $derived(files.length);
   let totalSloc = $derived(files.reduce((sum, f) => sum + f.sloc, 0));
-  let languages = $derived(() => {
+  let languages = $derived.by(() => {
     const counts = new Map<string, number>();
     for (const f of files) {
       const lang = f.language ?? 'unknown';
@@ -37,7 +37,7 @@
   let uniqueLanguages = $derived(new Set(files.map((f) => f.language).filter(Boolean)).size);
   let avgSloc = $derived(totalFiles > 0 ? Math.round(totalSloc / totalFiles) : 0);
 
-  let sortedFiles = $derived(() => {
+  let sortedFiles = $derived.by(() => {
     const sorted = [...files];
     sorted.sort((a, b) => {
       if (sortKey === 'sloc') {
@@ -126,7 +126,7 @@
     <!-- Language distribution -->
     <h2 class="text-lg font-semibold mb-3">Language Distribution</h2>
     <div class="space-y-2 mb-8">
-      {#each languages() as { lang, sloc, pct }}
+      {#each languages as { lang, sloc, pct }}
         <div class="flex items-center gap-3">
           <span class="w-24 text-sm text-[var(--c-text-secondary)] truncate text-right">{lang}</span>
           <div class="flex-1 bg-[var(--surface-3)] rounded-full h-5 overflow-hidden">
@@ -157,7 +157,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each sortedFiles() as file}
+          {#each sortedFiles as file}
             <tr class="border-b border-[var(--c-border)]/50 hover:bg-[var(--surface-2)]">
               <td class="p-3 font-mono text-[var(--c-text-primary)] truncate max-w-md" title={file.path}>{file.path}</td>
               <td class="p-3">

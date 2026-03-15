@@ -16,7 +16,7 @@
   let totalFiles = $derived(files.length);
   let totalSloc = $derived(files.reduce((sum, f) => sum + f.sloc, 0));
   let languageCount = $derived(new Set(files.map((f) => f.language).filter(Boolean)).size);
-  let topLanguages = $derived(() => {
+  let topLanguages = $derived.by(() => {
     const counts = new Map<string, number>();
     for (const f of files) {
       const lang = f.language ?? 'unknown';
@@ -170,10 +170,10 @@
     </div>
 
     <!-- Language pills -->
-    {#if topLanguages().length > 0}
+    {#if topLanguages.length > 0}
       <div class="flex items-center gap-2 mb-8">
         <span class="text-xs text-[var(--c-text-muted)] uppercase tracking-wider font-medium">Languages</span>
-        {#each topLanguages() as lang}
+        {#each topLanguages as lang}
           <span class="text-xs px-2.5 py-1 rounded-full bg-[var(--surface-2)] border border-[var(--c-border)] text-[var(--c-text-secondary)] font-medium">{lang}</span>
         {/each}
       </div>

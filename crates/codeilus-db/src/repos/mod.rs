@@ -29,3 +29,5 @@ pub mod harvest_repo;
 pub use harvest_repo::{HarvestRepoRepo, HarvestRepoRow};
 pub mod quiz_repo;
 pub use quiz_repo::{QuizRepo, QuizQuestionRow};
+pub mod annotation_repo;
+pub use annotation_repo::{AnnotationRepo, AnnotationRow};

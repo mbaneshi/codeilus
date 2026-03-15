@@ -9,11 +9,11 @@ pub use batch_writer::BatchWriter;
 pub use migrations::Migrator;
 pub use pool::DbPool;
 pub use repos::{
-    ChapterRepo, ChapterRow, ChapterSectionRow, CommunityRepo, CommunityRow, EdgeRepo, EdgeRow,
-    FileMetricsRepo, FileMetricsRow, FileRepo, FileRow, HarvestRepoRepo, HarvestRepoRow,
-    LearnerStatsRow, NarrativeRepo, NarrativeRow, PatternRepo, PatternRow, ProcessRepo,
-    ProcessRow, ProcessStepRow, ProgressRepo, ProgressRow, QuizQuestionRow, QuizRepo, SymbolRepo,
-    SymbolRow,
+    AnnotationRepo, AnnotationRow, ChapterRepo, ChapterRow, ChapterSectionRow, CommunityRepo,
+    CommunityRow, EdgeRepo, EdgeRow, FileMetricsRepo, FileMetricsRow, FileRepo, FileRow,
+    HarvestRepoRepo, HarvestRepoRow, LearnerStatsRow, NarrativeRepo, NarrativeRow, PatternRepo,
+    PatternRow, ProcessRepo, ProcessRow, ProcessStepRow, ProgressRepo, ProgressRow,
+    QuizQuestionRow, QuizRepo, SymbolRepo, SymbolRow,
 };
 
 use std::collections::HashMap;
