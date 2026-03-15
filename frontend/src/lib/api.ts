@@ -15,7 +15,12 @@ async function get<T>(url: string, fallback: T): Promise<T> {
   try {
     const res = await fetch(url);
     if (!res.ok) {
-      console.error(`API ${url} returned ${res.status}: ${await res.text()}`);
+      console.error(`API ${url} returned ${res.status}`);
+      return fallback;
+    }
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      // SPA fallback returned HTML — endpoint doesn't exist
       return fallback;
     }
     return await res.json();
