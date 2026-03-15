@@ -27,3 +27,5 @@ pub mod progress_repo;
 pub use progress_repo::{LearnerStatsRow, ProgressRepo, ProgressRow};
 pub mod harvest_repo;
 pub use harvest_repo::{HarvestRepoRepo, HarvestRepoRow};
+pub mod quiz_repo;
+pub use quiz_repo::{QuizRepo, QuizQuestionRow};
