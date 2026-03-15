@@ -12,7 +12,7 @@
   import type { Chapter, ChapterSection, Progress, QuizQuestion } from '$lib/types';
   import {
     BookOpen, ArrowLeft, ArrowRight, Check, CheckCircle, CircleDot,
-    Code2, GitBranch, HelpCircle, Loader2, Trophy, Zap, X,
+    Code2, GitBranch, HelpCircle, Loader2, Trophy, Zap, X, Eye,
   } from 'lucide-svelte';
   import Markdown from '$lib/Markdown.svelte';
 
@@ -186,6 +186,16 @@
             </div>
           </div>
         </div>
+        {#if chapter.community_id !== null}
+          <a
+            href="/explore/graph"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border"
+            style="background: rgba(99,102,241,0.1); color: #818cf8; border-color: rgba(99,102,241,0.2)"
+          >
+            <GitBranch size={14} />
+            View in Graph
+          </a>
+        {/if}
       </div>
 
       {#if chapter.description}

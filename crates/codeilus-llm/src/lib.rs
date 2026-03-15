@@ -20,6 +20,5 @@ pub async fn is_available() -> bool {
 
 /// Convenience: send a prompt via the default Claude Code CLI.
 pub async fn prompt(request: LlmRequest) -> CodeilusResult<LlmResponse> {
-    use provider::LlmProvider as _;
-    ClaudeCli::new().prompt(&request).await
+    LlmProvider::prompt(&ClaudeCli::new(), &request).await
 }

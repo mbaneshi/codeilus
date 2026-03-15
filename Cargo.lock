@@ -362,6 +362,7 @@ dependencies = [
  "codeilus-graph",
  "codeilus-harvest",
  "codeilus-learn",
+ "codeilus-llm",
  "codeilus-mcp",
  "codeilus-metrics",
  "codeilus-narrate",
@@ -477,6 +478,7 @@ dependencies = [
 name = "codeilus-llm"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "codeilus-core",
  "codeilus-graph",
  "futures",

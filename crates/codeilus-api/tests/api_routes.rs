@@ -15,7 +15,8 @@ fn setup() -> AppState {
     }
     let db = Arc::new(db);
     let event_bus = Arc::new(EventBus::new(16));
-    AppState::new(db, event_bus)
+    let llm: Arc<dyn codeilus_llm::LlmProvider> = Arc::new(codeilus_llm::ClaudeCli::new());
+    AppState::new(db, event_bus, llm)
 }
 
 async fn get_json(state: &AppState, uri: &str) -> (StatusCode, serde_json::Value) {

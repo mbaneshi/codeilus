@@ -31,7 +31,8 @@ fn setup_db() -> Arc<DbPool> {
 
 fn setup_state(db: Arc<DbPool>) -> AppState {
     let event_bus = Arc::new(EventBus::new(16));
-    AppState::new(db, event_bus)
+    let llm: Arc<dyn codeilus_llm::LlmProvider> = Arc::new(codeilus_llm::ClaudeCli::new());
+    AppState::new(db, event_bus, llm)
 }
 
 /// Store parsed files and symbols into the DB; returns the DB pool.
@@ -247,7 +248,8 @@ async fn source_endpoint_with_repo_root() {
         .unwrap();
 
     let event_bus = Arc::new(EventBus::new(16));
-    let state = AppState::new(db, event_bus).with_repo_root(repo_root);
+    let llm: Arc<dyn codeilus_llm::LlmProvider> = Arc::new(codeilus_llm::ClaudeCli::new());
+    let state = AppState::new(db, event_bus, llm).with_repo_root(repo_root);
 
     let (status, body) = get_json(
         &state,
