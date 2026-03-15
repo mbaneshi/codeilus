@@ -200,4 +200,12 @@ impl SymbolRepo {
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())
     }
+
+    /// Delete all symbols (for re-analysis).
+    pub fn delete_all(&self) -> CodeilusResult<()> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.execute("DELETE FROM symbols", [])
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        Ok(())
+    }
 }

@@ -104,11 +104,12 @@ impl SearchEngine {
                 let path: String = row.get(1)?;
                 let language: Option<String> = row.get(2)?;
                 let rank: f64 = row.get(3)?;
+                let snippet = extract_snippet(&path, q, 20);
                 Ok(SearchResult {
                     id,
                     kind: SearchResultKind::File,
                     name: path.clone(),
-                    snippet: path.clone(),
+                    snippet,
                     score: -rank, // FTS5 rank is negative; negate for display
                     metadata: SearchMetadata {
                         language,
@@ -163,7 +164,8 @@ impl SearchEngine {
                 let language: Option<String> = row.get(7)?;
                 let rank: f64 = row.get(8)?;
 
-                let snippet = signature.unwrap_or_else(|| name.clone());
+                let sig_text = signature.unwrap_or_else(|| name.clone());
+                let snippet = extract_snippet(&sig_text, q, 20);
                 let line_range = match (start_line, end_line) {
                     (Some(s), Some(e)) => Some((s, e)),
                     _ => None,
@@ -221,12 +223,7 @@ impl SearchEngine {
                 let content: String = row.get(2)?;
                 let rank: f64 = row.get(3)?;
 
-                // Truncate content for snippet
-                let snippet = if content.len() > 200 {
-                    format!("{}...", &content[..200])
-                } else {
-                    content
-                };
+                let snippet = extract_snippet(&content, q, 20);
 
                 Ok(SearchResult {
                     id,
@@ -303,6 +300,75 @@ fn apply_rrf_scores(results: &mut [SearchResult]) {
     }
 }
 
+/// Extract a snippet from `text` around the first occurrence of any word in `query`.
+///
+/// Returns up to `context` characters on each side of the match. If no match is
+/// found, returns the first `2 * context` characters of `text`.
+fn extract_snippet(text: &str, query: &str, context: usize) -> String {
+    let text_lower = text.to_lowercase();
+    let words: Vec<String> = query
+        .split_whitespace()
+        .map(|w| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
+                .collect::<String>()
+                .to_lowercase()
+        })
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    // Find the earliest match position
+    let mut best_pos: Option<usize> = None;
+    for word in &words {
+        if let Some(pos) = text_lower.find(word.as_str()) {
+            best_pos = Some(match best_pos {
+                Some(prev) if prev < pos => prev,
+                _ => pos,
+            });
+        }
+    }
+
+    let max_len = context * 2;
+    match best_pos {
+        Some(pos) => {
+            let start = pos.saturating_sub(context);
+            let end = (pos + context).min(text.len());
+            // Adjust to char boundaries
+            let start = text
+                .char_indices()
+                .map(|(i, _)| i)
+                .find(|&i| i >= start)
+                .unwrap_or(0);
+            let end = text
+                .char_indices()
+                .map(|(i, _)| i)
+                .rfind(|&i| i <= end)
+                .unwrap_or(text.len());
+            let mut snippet = String::new();
+            if start > 0 {
+                snippet.push_str("...");
+            }
+            snippet.push_str(&text[start..end]);
+            if end < text.len() {
+                snippet.push_str("...");
+            }
+            snippet
+        }
+        None => {
+            if text.len() <= max_len {
+                text.to_string()
+            } else {
+                let end = text
+                    .char_indices()
+                    .map(|(i, _)| i)
+                    .rfind(|&i| i <= max_len)
+                    .unwrap_or(max_len);
+                format!("{}...", &text[..end])
+            }
+        }
+    }
+}
+
 /// Sanitize user input for FTS5 MATCH syntax.
 ///
 /// Each word is wrapped in double quotes to prevent FTS5 syntax errors from
@@ -348,5 +414,43 @@ mod tests {
     #[test]
     fn test_sanitize_quotes() {
         assert_eq!(sanitize_fts_query("\"hello\""), "\"hello\"");
+    }
+
+    #[test]
+    fn test_extract_snippet_match_found() {
+        let text = "The quick brown fox jumps over the lazy dog";
+        let snippet = extract_snippet(text, "fox", 20);
+        assert!(snippet.contains("fox"), "snippet should contain the match");
+    }
+
+    #[test]
+    fn test_extract_snippet_context_window() {
+        let text = "aaaaaaaaaaaaaaaaaaaaaaaaaaa_MATCH_bbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let snippet = extract_snippet(text, "MATCH", 20);
+        assert!(snippet.contains("MATCH"));
+        // Should have context around the match, not the full string
+        assert!(snippet.len() < text.len() + 6); // +6 for potential "..." on each side
+    }
+
+    #[test]
+    fn test_extract_snippet_no_match() {
+        let text = "some long text that goes on and on and on and on and on and on";
+        let snippet = extract_snippet(text, "zzzzz", 20);
+        // Should return truncated beginning
+        assert!(snippet.len() <= 43 + 3); // 40 chars + "..."
+    }
+
+    #[test]
+    fn test_extract_snippet_short_text() {
+        let text = "short";
+        let snippet = extract_snippet(text, "missing", 20);
+        assert_eq!(snippet, "short");
+    }
+
+    #[test]
+    fn test_extract_snippet_at_start() {
+        let text = "MATCH is at the very start of a long string with lots of content";
+        let snippet = extract_snippet(text, "MATCH", 20);
+        assert!(snippet.starts_with("MATCH"));
     }
 }

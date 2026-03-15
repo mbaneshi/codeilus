@@ -23,6 +23,7 @@ pub struct ChapterSectionRow {
     pub section_id: String,
     pub title: String,
     pub kind: String,
+    pub content: String,
 }
 
 pub struct ChapterRepo {
@@ -57,10 +58,9 @@ impl ChapterRepo {
         section_id: &str,
         title: &str,
         kind: &str,
+        content: &str,
     ) -> CodeilusResult<i64> {
         let conn = self.conn.lock().expect("db mutex poisoned");
-        // Use content_type to store the section kind/id
-        // order_index is derived from existing section count
         let order: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM chapter_sections WHERE chapter_id = ?1",
@@ -70,11 +70,11 @@ impl ChapterRepo {
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
 
         conn.execute(
-            "INSERT INTO chapter_sections (chapter_id, title, content_type, order_index) VALUES (?1, ?2, ?3, ?4)",
-            params![chapter_id.0, title, kind, order],
+            "INSERT INTO chapter_sections (chapter_id, title, content_type, content, order_index) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![chapter_id.0, title, kind, content, order],
         )
         .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-        let _ = section_id; // section_id is stored via content_type=kind
+        let _ = section_id;
         Ok(conn.last_insert_rowid())
     }
 
@@ -129,7 +129,7 @@ impl ChapterRepo {
     pub fn list_sections(&self, chapter_id: ChapterId) -> CodeilusResult<Vec<ChapterSectionRow>> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
-            .prepare("SELECT id, chapter_id, content_type, title, content_type FROM chapter_sections WHERE chapter_id = ?1 ORDER BY order_index")
+            .prepare("SELECT id, chapter_id, content_type, title, content_type, COALESCE(content, '') FROM chapter_sections WHERE chapter_id = ?1 ORDER BY order_index")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         let rows = stmt
             .query_map(params![chapter_id.0], |row| {
@@ -139,6 +139,7 @@ impl ChapterRepo {
                     section_id: row.get(2)?,
                     title: row.get(3)?,
                     kind: row.get(4)?,
+                    content: row.get(5)?,
                 })
             })
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;

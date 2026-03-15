@@ -12,17 +12,36 @@ pub use repos::{
     ChapterRepo, ChapterRow, ChapterSectionRow, CommunityRepo, CommunityRow, EdgeRepo, EdgeRow,
     FileMetricsRepo, FileMetricsRow, FileRepo, FileRow, HarvestRepoRepo, HarvestRepoRow,
     LearnerStatsRow, NarrativeRepo, NarrativeRow, PatternRepo, PatternRow, ProcessRepo,
-    ProcessRow, ProcessStepRow, ProgressRepo, ProgressRow, SymbolRepo, SymbolRow,
+    ProcessRow, ProcessStepRow, ProgressRepo, ProgressRow, QuizQuestionRow, QuizRepo, SymbolRepo,
+    SymbolRow,
 };
 
 use std::collections::HashMap;
 
+use codeilus_core::error::CodeilusResult;
 use codeilus_core::CodeilusError;
 use codeilus_parse::ParsedFile;
 use repos::files::NewFile;
 use repos::symbols::NewSymbol;
 
 impl DbPool {
+    /// Delete all analysis data in FK-safe order, enabling re-analysis.
+    pub fn clear_analysis_data(&self) -> CodeilusResult<()> {
+        let conn_arc = self.conn_arc();
+        QuizRepo::new(conn_arc.clone()).delete_all()?;
+        ProgressRepo::new(conn_arc.clone()).delete_all()?;
+        ChapterRepo::new(conn_arc.clone()).delete_all()?;
+        ProcessRepo::new(conn_arc.clone()).delete_all()?;
+        CommunityRepo::new(conn_arc.clone()).delete_all()?;
+        NarrativeRepo::new(conn_arc.clone()).delete_all()?;
+        PatternRepo::new(conn_arc.clone()).delete_all()?;
+        FileMetricsRepo::new(conn_arc.clone()).delete_all()?;
+        EdgeRepo::new(conn_arc.clone()).delete_all()?;
+        SymbolRepo::new(conn_arc.clone()).delete_all()?;
+        FileRepo::new(conn_arc).delete_all()?;
+        Ok(())
+    }
+
     /// Persist a collection of parsed files into the database.
     ///
     /// For Sprint 1 this inserts rows into `files` and `symbols`. Edge persistence

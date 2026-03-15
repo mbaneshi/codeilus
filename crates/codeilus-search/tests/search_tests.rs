@@ -209,3 +209,58 @@ fn test_limit_is_respected() {
         .expect("search failed");
     assert!(results.len() <= 1, "limit should be respected");
 }
+
+#[test]
+fn test_search_files_returns_snippets() {
+    let (pool, engine) = setup();
+    insert_sample_data(&pool);
+
+    let results = engine
+        .search("helpers", Some(SearchResultKind::File), 10)
+        .expect("search failed");
+
+    assert!(!results.is_empty());
+    let first = &results[0];
+    // Snippet should contain the matched term
+    assert!(
+        first.snippet.contains("helpers"),
+        "snippet should contain the matched term, got: {}",
+        first.snippet
+    );
+}
+
+#[test]
+fn test_search_symbols_returns_snippets() {
+    let (pool, engine) = setup();
+    insert_sample_data(&pool);
+
+    let results = engine
+        .search("format_output", Some(SearchResultKind::Symbol), 10)
+        .expect("search failed");
+
+    assert!(!results.is_empty());
+    let first = &results[0];
+    assert!(
+        first.snippet.contains("format_output"),
+        "snippet should contain the matched symbol, got: {}",
+        first.snippet
+    );
+}
+
+#[test]
+fn test_search_narratives_returns_snippets() {
+    let (pool, engine) = setup();
+    insert_sample_data(&pool);
+
+    let results = engine
+        .search("logging", Some(SearchResultKind::Narrative), 10)
+        .expect("search failed");
+
+    assert!(!results.is_empty());
+    let first = &results[0];
+    assert!(
+        first.snippet.contains("logging"),
+        "snippet should contain the matched term, got: {}",
+        first.snippet
+    );
+}
