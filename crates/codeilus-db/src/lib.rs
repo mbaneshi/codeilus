@@ -28,17 +28,24 @@ impl DbPool {
     /// Delete all analysis data in FK-safe order, enabling re-analysis.
     pub fn clear_analysis_data(&self) -> CodeilusResult<()> {
         let conn = self.connection();
-        // FK-safe deletion order: children before parents.
+        // Disable FK checks for bulk delete, re-enable after.
+        conn.execute_batch("PRAGMA foreign_keys = OFF;")
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         for table in &[
+            "quiz_attempts",
             "quiz_questions",
+            "badges",
+            "learner_stats",
             "progress",
             "chapter_sections",
             "chapters",
             "process_steps",
             "processes",
+            "community_members",
             "communities",
             "narratives",
             "patterns",
+            "annotations",
             "file_metrics",
             "edges",
             "symbols",
@@ -47,6 +54,8 @@ impl DbPool {
             conn.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         }
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())
     }
 
