@@ -11,9 +11,10 @@ pub use types::*;
 use codeilus_core::error::CodeilusResult;
 use codeilus_db::DbPool;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Export a repo to a self-contained HTML file.
-pub fn export_repo(repo_name: &str, db: &DbPool, output_dir: &Path) -> CodeilusResult<PathBuf> {
+pub fn export_repo(repo_name: &str, db: &Arc<DbPool>, output_dir: &Path) -> CodeilusResult<PathBuf> {
     let data = data_loader::load_export_data(repo_name, db)?;
     let filename = format!("{}.html", repo_name.replace('/', "-"));
     let output_path = output_dir.join(&filename);

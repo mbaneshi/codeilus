@@ -5,6 +5,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 
+use std::sync::Arc;
+
 use codeilus_core::error::CodeilusError;
 use codeilus_core::ids::{FileId, SymbolId};
 use codeilus_db::{SymbolRepo, SymbolRow};
@@ -82,7 +84,7 @@ async fn get_symbol(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<SymbolRow>, ApiError> {
-    let repo = SymbolRepo::new(state.db.conn_arc());
+    let repo = SymbolRepo::new(Arc::clone(&state.db));
     let symbol = repo.get(SymbolId(id))?;
     Ok(Json(symbol))
 }
@@ -92,7 +94,7 @@ async fn search_symbols(
     State(state): State<AppState>,
     Query(query): Query<SymbolSearchQuery>,
 ) -> Result<Json<Vec<SymbolRow>>, ApiError> {
-    let repo = SymbolRepo::new(state.db.conn_arc());
+    let repo = SymbolRepo::new(Arc::clone(&state.db));
     let q = query.q.as_deref().unwrap_or("");
     let results = repo.search(q)?;
     Ok(Json(results))

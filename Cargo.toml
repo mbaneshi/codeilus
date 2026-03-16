@@ -17,6 +17,7 @@ members = [
     "crates/codeilus-export",
     "crates/codeilus-mcp",
     "crates/codeilus-app",
+    "xtask",
 ]
 
 [workspace.dependencies]
@@ -31,10 +32,11 @@ rust-embed = { version = "8", features = ["mime-guess"] }
 mime_guess = "2"
 http = "1"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 thiserror = "2"
 crossbeam-channel = "0.5"
 clap = { version = "4", features = ["derive"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 futures = "0.3"
 tokio-stream = "0.1"
+moka = { version = "0.12", features = ["sync"] }

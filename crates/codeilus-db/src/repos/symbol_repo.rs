@@ -1,8 +1,10 @@
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use codeilus_core::ids::{FileId, SymbolId};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolRow {
@@ -19,12 +21,12 @@ pub struct SymbolRow {
 pub type NewSymbolBatch = (FileId, String, String, i64, i64, Option<String>);
 
 pub struct SymbolRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl SymbolRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     /// Insert a single symbol.
@@ -37,7 +39,7 @@ impl SymbolRepo {
         end_line: i64,
         signature: Option<&str>,
     ) -> CodeilusResult<SymbolId> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO symbols (file_id, name, kind, start_line, end_line, signature) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![file_id.0, name, kind, start_line, end_line, signature],
@@ -51,7 +53,7 @@ impl SymbolRepo {
         &self,
         symbols: &[NewSymbolBatch],
     ) -> CodeilusResult<Vec<SymbolId>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -75,7 +77,7 @@ impl SymbolRepo {
 
     /// Get symbol by ID.
     pub fn get(&self, id: SymbolId) -> CodeilusResult<SymbolRow> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.query_row(
             "SELECT id, file_id, name, kind, start_line, end_line, signature FROM symbols WHERE id = ?1",
             params![id.0],
@@ -101,7 +103,7 @@ impl SymbolRepo {
 
     /// List symbols for a file.
     pub fn list_by_file(&self, file_id: FileId) -> CodeilusResult<Vec<SymbolRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT id, file_id, name, kind, start_line, end_line, signature FROM symbols WHERE file_id = ?1",
@@ -129,7 +131,7 @@ impl SymbolRepo {
 
     /// Search symbols by name (exact match).
     pub fn list_by_name(&self, name: &str) -> CodeilusResult<Vec<SymbolRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT id, file_id, name, kind, start_line, end_line, signature FROM symbols WHERE name = ?1",
@@ -157,7 +159,7 @@ impl SymbolRepo {
 
     /// Search symbols by name prefix (LIKE 'name%').
     pub fn search(&self, query: &str) -> CodeilusResult<Vec<SymbolRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let pattern = format!("{query}%");
         let mut stmt = conn
             .prepare(
@@ -186,7 +188,7 @@ impl SymbolRepo {
 
     /// Count total symbols.
     pub fn count(&self) -> CodeilusResult<usize> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0))
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -195,7 +197,7 @@ impl SymbolRepo {
 
     /// Delete all symbols for a file (for re-parse).
     pub fn delete_by_file(&self, file_id: FileId) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM symbols WHERE file_id = ?1", params![file_id.0])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())
@@ -203,7 +205,7 @@ impl SymbolRepo {
 
     /// Delete all symbols (for re-analysis).
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM symbols", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())

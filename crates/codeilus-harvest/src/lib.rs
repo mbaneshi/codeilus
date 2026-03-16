@@ -10,6 +10,7 @@ pub use types::*;
 use codeilus_core::CodeilusResult;
 use codeilus_db::DbPool;
 use std::path::Path;
+use std::sync::Arc;
 use tracing::{debug, info};
 
 /// Harvest trending repos: scrape, clone, fingerprint, and skip already-analyzed.
@@ -21,14 +22,14 @@ use tracing::{debug, info};
 /// 4. Compute fingerprints for cloned repos
 pub async fn harvest_trending(
     config: HarvestConfig,
-    db: Option<&DbPool>,
+    db: Option<&Arc<DbPool>>,
 ) -> CodeilusResult<Vec<HarvestedRepo>> {
     let mut repos = scraper::scrape_trending(&config).await?;
     info!(count = repos.len(), "scraped trending repos");
 
     // Skip already-analyzed repos if DB is available
     if let Some(db) = db {
-        let harvest_repo = codeilus_db::HarvestRepoRepo::new(db.conn_arc());
+        let harvest_repo = codeilus_db::HarvestRepoRepo::new(Arc::clone(db));
         for repo in &mut repos {
             // Use a preliminary fingerprint based on owner/name (no commit hash yet)
             if let Ok(true) =

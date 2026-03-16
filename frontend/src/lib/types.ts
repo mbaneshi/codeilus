@@ -41,6 +41,24 @@ export interface GraphResponse {
   edges: GraphEdge[];
 }
 
+export interface CommunityGraphNode {
+  id: number;
+  label: string;
+  member_count: number;
+  cohesion: number;
+}
+
+export interface CommunityGraphEdge {
+  source_id: number;
+  target_id: number;
+  weight: number;
+}
+
+export interface CommunityGraphResponse {
+  nodes: CommunityGraphNode[];
+  edges: CommunityGraphEdge[];
+}
+
 export interface Community {
   id: number;
   label: string;

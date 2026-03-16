@@ -1,26 +1,25 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use codeilus_core::ids::{FileId, SymbolId};
 use codeilus_db::{
     CommunityRepo, DbPool, EdgeRepo, FileMetricsRepo, FileRepo, HarvestRepoRepo, HarvestRepoRow,
     Migrator, NarrativeRepo, PatternRepo, PatternRow, ProcessRepo, SymbolRepo,
 };
-use rusqlite::Connection;
 
-fn setup() -> Arc<Mutex<Connection>> {
+fn setup() -> Arc<DbPool> {
     let db = DbPool::in_memory().unwrap();
     let conn = db.connection();
     Migrator::new(&conn).apply_pending().unwrap();
     drop(conn);
-    db.conn_arc()
+    Arc::new(db)
 }
 
 // ── FileRepo ──────────────────────────────────────────────────
 
 #[test]
 fn file_insert_and_get() {
-    let conn = setup();
-    let repo = FileRepo::new(conn);
+    let db = setup();
+    let repo = FileRepo::new(db);
     let id = repo.insert("src/main.rs", Some("rust"), 100).unwrap();
     let row = repo.get(id).unwrap();
     assert_eq!(row.path, "src/main.rs");
@@ -30,8 +29,8 @@ fn file_insert_and_get() {
 
 #[test]
 fn file_insert_batch() {
-    let conn = setup();
-    let repo = FileRepo::new(conn);
+    let db = setup();
+    let repo = FileRepo::new(db);
     let files = vec![
         ("a.rs".to_string(), Some("rust".to_string()), 10),
         ("b.py".to_string(), Some("python".to_string()), 20),
@@ -44,8 +43,8 @@ fn file_insert_batch() {
 
 #[test]
 fn file_get_by_path() {
-    let conn = setup();
-    let repo = FileRepo::new(conn);
+    let db = setup();
+    let repo = FileRepo::new(db);
     repo.insert("src/lib.rs", Some("rust"), 50).unwrap();
     let row = repo.get_by_path("src/lib.rs").unwrap();
     assert!(row.is_some());
@@ -54,16 +53,16 @@ fn file_get_by_path() {
 
 #[test]
 fn file_get_by_path_not_found() {
-    let conn = setup();
-    let repo = FileRepo::new(conn);
+    let db = setup();
+    let repo = FileRepo::new(db);
     let row = repo.get_by_path("nonexistent.rs").unwrap();
     assert!(row.is_none());
 }
 
 #[test]
 fn file_list_all() {
-    let conn = setup();
-    let repo = FileRepo::new(conn);
+    let db = setup();
+    let repo = FileRepo::new(db);
     let files = vec![
         ("a.rs".to_string(), Some("rust".to_string()), 10),
         ("b.py".to_string(), Some("python".to_string()), 20),
@@ -76,8 +75,8 @@ fn file_list_all() {
 
 #[test]
 fn file_list_with_language_filter() {
-    let conn = setup();
-    let repo = FileRepo::new(conn);
+    let db = setup();
+    let repo = FileRepo::new(db);
     repo.insert("a.py", Some("python"), 10).unwrap();
     repo.insert("b.rs", Some("rust"), 20).unwrap();
     repo.insert("c.py", Some("python"), 30).unwrap();
@@ -89,8 +88,8 @@ fn file_list_with_language_filter() {
 
 #[test]
 fn file_delete_all() {
-    let conn = setup();
-    let repo = FileRepo::new(conn);
+    let db = setup();
+    let repo = FileRepo::new(db);
     let files = vec![
         ("a.rs".to_string(), Some("rust".to_string()), 10),
         ("b.rs".to_string(), Some("rust".to_string()), 20),
@@ -104,16 +103,16 @@ fn file_delete_all() {
 
 // ── SymbolRepo ────────────────────────────────────────────────
 
-fn insert_test_file(conn: &Arc<Mutex<Connection>>) -> FileId {
-    let file_repo = FileRepo::new(Arc::clone(conn));
+fn insert_test_file(db: &Arc<DbPool>) -> FileId {
+    let file_repo = FileRepo::new(Arc::clone(db));
     file_repo.insert("test.rs", Some("rust"), 100).unwrap()
 }
 
 #[test]
 fn symbol_insert_and_get() {
-    let conn = setup();
-    let file_id = insert_test_file(&conn);
-    let repo = SymbolRepo::new(conn);
+    let db = setup();
+    let file_id = insert_test_file(&db);
+    let repo = SymbolRepo::new(db);
     let id = repo
         .insert(file_id, "main", "Function", 1, 10, Some("fn main()"))
         .unwrap();
@@ -128,9 +127,9 @@ fn symbol_insert_and_get() {
 
 #[test]
 fn symbol_insert_batch() {
-    let conn = setup();
-    let file_id = insert_test_file(&conn);
-    let repo = SymbolRepo::new(conn);
+    let db = setup();
+    let file_id = insert_test_file(&db);
+    let repo = SymbolRepo::new(db);
     let symbols: Vec<_> = (0..5)
         .map(|i| {
             (
@@ -150,11 +149,11 @@ fn symbol_insert_batch() {
 
 #[test]
 fn symbol_list_by_file() {
-    let conn = setup();
-    let file_repo = FileRepo::new(Arc::clone(&conn));
+    let db = setup();
+    let file_repo = FileRepo::new(Arc::clone(&db));
     let file1 = file_repo.insert("a.rs", Some("rust"), 10).unwrap();
     let file2 = file_repo.insert("b.rs", Some("rust"), 20).unwrap();
-    let repo = SymbolRepo::new(Arc::clone(&conn));
+    let repo = SymbolRepo::new(Arc::clone(&db));
     repo.insert(file1, "alpha", "Function", 1, 5, None)
         .unwrap();
     repo.insert(file1, "beta", "Function", 6, 10, None)
@@ -169,9 +168,9 @@ fn symbol_list_by_file() {
 
 #[test]
 fn symbol_list_by_name() {
-    let conn = setup();
-    let file_id = insert_test_file(&conn);
-    let repo = SymbolRepo::new(conn);
+    let db = setup();
+    let file_id = insert_test_file(&db);
+    let repo = SymbolRepo::new(db);
     repo.insert(file_id, "process", "Function", 1, 5, None)
         .unwrap();
     repo.insert(file_id, "handle", "Function", 6, 10, None)
@@ -183,9 +182,9 @@ fn symbol_list_by_name() {
 
 #[test]
 fn symbol_search_prefix() {
-    let conn = setup();
-    let file_id = insert_test_file(&conn);
-    let repo = SymbolRepo::new(conn);
+    let db = setup();
+    let file_id = insert_test_file(&db);
+    let repo = SymbolRepo::new(db);
     repo.insert(file_id, "process", "Function", 1, 5, None)
         .unwrap();
     repo.insert(file_id, "processor", "Class", 6, 20, None)
@@ -198,11 +197,11 @@ fn symbol_search_prefix() {
 
 #[test]
 fn symbol_delete_by_file() {
-    let conn = setup();
-    let file_repo = FileRepo::new(Arc::clone(&conn));
+    let db = setup();
+    let file_repo = FileRepo::new(Arc::clone(&db));
     let file1 = file_repo.insert("a.rs", Some("rust"), 10).unwrap();
     let file2 = file_repo.insert("b.rs", Some("rust"), 20).unwrap();
-    let repo = SymbolRepo::new(Arc::clone(&conn));
+    let repo = SymbolRepo::new(Arc::clone(&db));
     repo.insert(file1, "alpha", "Function", 1, 5, None)
         .unwrap();
     repo.insert(file1, "beta", "Function", 6, 10, None)
@@ -219,10 +218,10 @@ fn symbol_delete_by_file() {
 
 // ── EdgeRepo ──────────────────────────────────────────────────
 
-fn insert_test_symbols(conn: &Arc<Mutex<Connection>>) -> (SymbolId, SymbolId, SymbolId) {
-    let file_repo = FileRepo::new(Arc::clone(conn));
+fn insert_test_symbols(db: &Arc<DbPool>) -> (SymbolId, SymbolId, SymbolId) {
+    let file_repo = FileRepo::new(Arc::clone(db));
     let file_id = file_repo.insert("test.rs", Some("rust"), 100).unwrap();
-    let sym_repo = SymbolRepo::new(Arc::clone(conn));
+    let sym_repo = SymbolRepo::new(Arc::clone(db));
     let s1 = sym_repo
         .insert(file_id, "caller", "Function", 1, 5, None)
         .unwrap();
@@ -237,9 +236,9 @@ fn insert_test_symbols(conn: &Arc<Mutex<Connection>>) -> (SymbolId, SymbolId, Sy
 
 #[test]
 fn edge_insert_and_list_from() {
-    let conn = setup();
-    let (s1, s2, _s3) = insert_test_symbols(&conn);
-    let repo = EdgeRepo::new(conn);
+    let db = setup();
+    let (s1, s2, _s3) = insert_test_symbols(&db);
+    let repo = EdgeRepo::new(db);
     repo.insert(s1, s2, "CALLS", 1.0).unwrap();
     let edges = repo.list_from(s1).unwrap();
     assert_eq!(edges.len(), 1);
@@ -250,9 +249,9 @@ fn edge_insert_and_list_from() {
 
 #[test]
 fn edge_insert_batch() {
-    let conn = setup();
-    let (s1, s2, s3) = insert_test_symbols(&conn);
-    let repo = EdgeRepo::new(conn);
+    let db = setup();
+    let (s1, s2, s3) = insert_test_symbols(&db);
+    let repo = EdgeRepo::new(db);
     let edges: Vec<_> = (0..10)
         .map(|i| {
             if i % 2 == 0 {
@@ -269,9 +268,9 @@ fn edge_insert_batch() {
 
 #[test]
 fn edge_list_to() {
-    let conn = setup();
-    let (s1, s2, s3) = insert_test_symbols(&conn);
-    let repo = EdgeRepo::new(conn);
+    let db = setup();
+    let (s1, s2, s3) = insert_test_symbols(&db);
+    let repo = EdgeRepo::new(db);
     repo.insert(s1, s2, "CALLS", 1.0).unwrap();
     repo.insert(s3, s2, "CALLS", 0.8).unwrap();
     let incoming = repo.list_to(s2).unwrap();
@@ -280,9 +279,9 @@ fn edge_list_to() {
 
 #[test]
 fn edge_list_by_kind() {
-    let conn = setup();
-    let (s1, s2, s3) = insert_test_symbols(&conn);
-    let repo = EdgeRepo::new(conn);
+    let db = setup();
+    let (s1, s2, s3) = insert_test_symbols(&db);
+    let repo = EdgeRepo::new(db);
     repo.insert(s1, s2, "CALLS", 1.0).unwrap();
     repo.insert(s1, s3, "IMPORTS", 1.0).unwrap();
     repo.insert(s2, s3, "CALLS", 0.9).unwrap();
@@ -296,9 +295,9 @@ fn edge_list_by_kind() {
 
 #[test]
 fn community_repo_insert_and_list() {
-    let conn = setup();
-    let (s1, s2, _s3) = insert_test_symbols(&conn);
-    let repo = CommunityRepo::new(conn);
+    let db = setup();
+    let (s1, s2, _s3) = insert_test_symbols(&db);
+    let repo = CommunityRepo::new(db);
 
     // Insert a community
     let id = repo.insert("auth_cluster", 0.85).unwrap();
@@ -347,8 +346,8 @@ fn community_repo_insert_and_list() {
 
 #[test]
 fn pattern_repo_insert_and_list() {
-    let conn = setup();
-    let repo = PatternRepo::new(conn);
+    let db = setup();
+    let repo = PatternRepo::new(db);
 
     let row = PatternRow {
         id: 0,
@@ -399,8 +398,8 @@ fn pattern_repo_insert_and_list() {
 
 #[test]
 fn pattern_repo_filter_by_severity() {
-    let conn = setup();
-    let repo = PatternRepo::new(conn);
+    let db = setup();
+    let repo = PatternRepo::new(db);
 
     let batch = vec![
         PatternRow {
@@ -444,9 +443,9 @@ fn pattern_repo_filter_by_severity() {
 
 #[test]
 fn process_repo_insert_and_list_steps() {
-    let conn = setup();
-    let (s1, s2, s3) = insert_test_symbols(&conn);
-    let repo = ProcessRepo::new(conn);
+    let db = setup();
+    let (s1, s2, s3) = insert_test_symbols(&db);
+    let repo = ProcessRepo::new(db);
 
     // Insert process
     let proc_id = repo.insert("main_flow", s1).unwrap();
@@ -483,11 +482,11 @@ fn process_repo_insert_and_list_steps() {
 
 #[test]
 fn file_metrics_repo_insert_and_get() {
-    let conn = setup();
-    let file_repo = FileRepo::new(Arc::clone(&conn));
+    let db = setup();
+    let file_repo = FileRepo::new(Arc::clone(&db));
     let file_id = file_repo.insert("metrics_test.rs", Some("rust"), 100).unwrap();
 
-    let repo = FileMetricsRepo::new(conn);
+    let repo = FileMetricsRepo::new(db);
     let id = repo.insert(file_id, 100, 5.5, 20, 3, 0.8).unwrap();
     assert!(id > 0);
 
@@ -503,8 +502,8 @@ fn file_metrics_repo_insert_and_get() {
 
 #[test]
 fn file_metrics_repo_list_hotspots() {
-    let conn = setup();
-    let file_repo = FileRepo::new(Arc::clone(&conn));
+    let db = setup();
+    let file_repo = FileRepo::new(Arc::clone(&db));
 
     let mut file_ids = Vec::new();
     for i in 0..5 {
@@ -514,7 +513,7 @@ fn file_metrics_repo_list_hotspots() {
         file_ids.push(fid);
     }
 
-    let repo = FileMetricsRepo::new(conn);
+    let repo = FileMetricsRepo::new(db);
     for (i, fid) in file_ids.iter().enumerate() {
         let complexity = (i + 1) as f64 * 10.0;
         repo.insert(*fid, 50, complexity, 5, 2, 0.5).unwrap();
@@ -531,8 +530,8 @@ fn file_metrics_repo_list_hotspots() {
 
 #[test]
 fn narrative_repo_insert_and_get() {
-    let conn = setup();
-    let repo = NarrativeRepo::new(conn);
+    let db = setup();
+    let repo = NarrativeRepo::new(db);
 
     let id = repo.insert("overview", None, "This is the overview.", false).unwrap();
     assert!(id > 0);
@@ -547,8 +546,8 @@ fn narrative_repo_insert_and_get() {
 
 #[test]
 fn narrative_repo_get_by_kind_and_target() {
-    let conn = setup();
-    let repo = NarrativeRepo::new(conn);
+    let db = setup();
+    let repo = NarrativeRepo::new(db);
 
     repo.insert("module_summary", Some(1), "Summary for community 1", false)
         .unwrap();
@@ -566,8 +565,8 @@ fn narrative_repo_get_by_kind_and_target() {
 
 #[test]
 fn narrative_repo_list_by_kind() {
-    let conn = setup();
-    let repo = NarrativeRepo::new(conn);
+    let db = setup();
+    let repo = NarrativeRepo::new(db);
 
     repo.insert("module_summary", Some(1), "Summary 1", false).unwrap();
     repo.insert("module_summary", Some(2), "Summary 2", false).unwrap();
@@ -591,8 +590,8 @@ fn narrative_repo_list_by_kind() {
 
 #[test]
 fn harvest_repo_insert_and_get() {
-    let conn = setup();
-    let repo = HarvestRepoRepo::new(conn);
+    let db = setup();
+    let repo = HarvestRepoRepo::new(db);
 
     let row = HarvestRepoRow {
         id: 0,
@@ -621,8 +620,8 @@ fn harvest_repo_insert_and_get() {
 
 #[test]
 fn harvest_repo_list_by_status() {
-    let conn = setup();
-    let repo = HarvestRepoRepo::new(conn);
+    let db = setup();
+    let repo = HarvestRepoRepo::new(db);
 
     let row1 = HarvestRepoRow {
         id: 0,
@@ -665,8 +664,8 @@ fn harvest_repo_list_by_status() {
 
 #[test]
 fn harvest_repo_update_status() {
-    let conn = setup();
-    let repo = HarvestRepoRepo::new(conn);
+    let db = setup();
+    let repo = HarvestRepoRepo::new(db);
 
     let row = HarvestRepoRow {
         id: 0,

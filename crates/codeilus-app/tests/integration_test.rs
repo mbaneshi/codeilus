@@ -39,9 +39,8 @@ fn setup_state(db: Arc<DbPool>) -> AppState {
 /// Store parsed files and symbols into the DB; returns the DB pool.
 fn store_parsed(parsed: &[codeilus_parse::ParsedFile]) -> Arc<DbPool> {
     let db = setup_db();
-    let conn = db.conn_arc();
-    let file_repo = FileRepo::new(Arc::clone(&conn));
-    let sym_repo = SymbolRepo::new(Arc::clone(&conn));
+    let file_repo = FileRepo::new(Arc::clone(&db));
+    let sym_repo = SymbolRepo::new(Arc::clone(&db));
 
     for pf in parsed {
         let path_str = pf.path.to_string_lossy();
@@ -96,9 +95,8 @@ fn parse_fixture_produces_files_and_symbols() {
 fn store_parsed_data_in_db() {
     let parsed = parse_fixture();
     let db = store_parsed(&parsed);
-    let conn = db.conn_arc();
-    let file_repo = FileRepo::new(Arc::clone(&conn));
-    let sym_repo = SymbolRepo::new(conn);
+    let file_repo = FileRepo::new(Arc::clone(&db));
+    let sym_repo = SymbolRepo::new(db);
 
     assert!(file_repo.count().unwrap() > 0, "files stored");
     assert!(sym_repo.count().unwrap() > 0, "symbols stored");
@@ -136,9 +134,8 @@ async fn graph_api_returns_nodes_with_community_ids() {
 
     // Build graph and store edges + communities
     let graph = GraphBuilder::new().build(&parsed).unwrap();
-    let conn = db.conn_arc();
 
-    let edge_repo = EdgeRepo::new(Arc::clone(&conn));
+    let edge_repo = EdgeRepo::new(Arc::clone(&db));
     for edge_idx in graph.graph.edge_indices() {
         let (src, tgt) = graph.graph.edge_endpoints(edge_idx).unwrap();
         let src_node = &graph.graph[src];
@@ -154,7 +151,7 @@ async fn graph_api_returns_nodes_with_community_ids() {
             .unwrap();
     }
 
-    let comm_repo = CommunityRepo::new(Arc::clone(&conn));
+    let comm_repo = CommunityRepo::new(Arc::clone(&db));
     for c in &graph.communities {
         let cid = comm_repo.insert(&c.label, c.cohesion).unwrap();
         let members: Vec<_> = c.members.iter().map(|s| (cid, *s)).collect();
@@ -210,7 +207,7 @@ async fn communities_api_returns_stored_communities() {
     let db = store_parsed(&parsed); // need symbols for FK on community_members
 
     let graph = GraphBuilder::new().build(&parsed).unwrap();
-    let comm_repo = CommunityRepo::new(db.conn_arc());
+    let comm_repo = CommunityRepo::new(Arc::clone(&db));
     for c in &graph.communities {
         let cid = comm_repo.insert(&c.label, c.cohesion).unwrap();
         let members: Vec<_> = c.members.iter().map(|s| (cid, *s)).collect();
@@ -239,7 +236,7 @@ async fn communities_api_returns_stored_communities() {
 #[tokio::test]
 async fn source_endpoint_with_repo_root() {
     let db = setup_db();
-    let file_repo = FileRepo::new(db.conn_arc());
+    let file_repo = FileRepo::new(Arc::clone(&db));
 
     // Insert a file that we know exists on disk
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

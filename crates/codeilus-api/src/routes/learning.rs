@@ -5,6 +5,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
 
+use std::sync::Arc;
+
 use codeilus_db::ProgressRepo;
 
 use crate::error::ApiError;
@@ -22,10 +24,9 @@ pub struct ProgressResponse {
 async fn list_progress(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ProgressResponse>>, ApiError> {
-    let conn = state.db.conn_arc();
-    let conn_guard = conn.lock().expect("db mutex poisoned");
+    let conn = state.db.connection();
 
-    let mut stmt = conn_guard
+    let mut stmt = conn
         .prepare(
             "SELECT chapter_id, section_id, completed, completed_at FROM progress WHERE completed = 1",
         )
@@ -62,14 +63,12 @@ async fn mark_section_complete(
     State(state): State<AppState>,
     Path((chapter_id, section_id)): Path<(i64, i64)>,
 ) -> Result<Json<SectionCompleteResponse>, ApiError> {
-    let conn = state.db.conn_arc();
-    let progress_repo = ProgressRepo::new(conn.clone());
+    let progress_repo = ProgressRepo::new(Arc::clone(&state.db));
 
     // Look up the content_type for this section_id so we can use record_section
     let content_type: String = {
-        let conn_guard = conn.lock().expect("db mutex poisoned");
-        conn_guard
-            .query_row(
+        let conn = state.db.connection();
+        conn.query_row(
                 "SELECT content_type FROM chapter_sections WHERE id = ?1 AND chapter_id = ?2",
                 rusqlite::params![section_id, chapter_id],
                 |row| row.get(0),
@@ -126,16 +125,15 @@ pub struct LearnerStatsResponse {
 async fn get_learner_stats(
     State(state): State<AppState>,
 ) -> Result<Json<LearnerStatsResponse>, ApiError> {
-    let conn = state.db.conn_arc();
-    let progress_repo = ProgressRepo::new(conn.clone());
+    let progress_repo = ProgressRepo::new(Arc::clone(&state.db));
 
     let stats = progress_repo.get_or_create_stats()?;
     let chapters_completed = progress_repo.count_completed_chapters()?;
 
     // Fetch full badge records from DB
     let badges = {
-        let conn_guard = conn.lock().expect("db mutex poisoned");
-        let mut stmt = conn_guard
+        let conn = state.db.connection();
+        let mut stmt = conn
             .prepare(
                 "SELECT id, name, COALESCE(description, ''), COALESCE(icon, ''), COALESCE(earned_at, '') FROM badges WHERE earned_at IS NOT NULL",
             )
@@ -169,12 +167,77 @@ async fn get_learner_stats(
     }))
 }
 
+#[derive(Serialize)]
+pub struct SkipChapterResponse {
+    pub sections_skipped: usize,
+}
+
+/// POST /api/v1/chapters/:id/skip
+///
+/// Marks all sections of a chapter as complete with xp_earned = 0 (skip/test-out).
+async fn skip_chapter(
+    State(state): State<AppState>,
+    Path(chapter_id): Path<i64>,
+) -> Result<Json<SkipChapterResponse>, ApiError> {
+    let progress_repo = ProgressRepo::new(Arc::clone(&state.db));
+
+    // Get all sections for this chapter
+    let sections: Vec<(i64, String)> = {
+        let conn = state.db.connection();
+        let mut stmt = conn
+            .prepare("SELECT id, content_type FROM chapter_sections WHERE chapter_id = ?1")
+            .map_err(|e| codeilus_core::CodeilusError::Database(Box::new(e)))?;
+        let rows = stmt
+            .query_map(rusqlite::params![chapter_id], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| codeilus_core::CodeilusError::Database(Box::new(e)))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| codeilus_core::CodeilusError::Database(Box::new(e)))?);
+        }
+        result
+    };
+
+    if sections.is_empty() {
+        return Err(codeilus_core::CodeilusError::NotFound(format!(
+            "chapter {}",
+            chapter_id
+        )).into());
+    }
+
+    let mut skipped = 0;
+    for (_section_id, content_type) in &sections {
+        // Only mark incomplete sections
+        if !progress_repo.is_section_complete(chapter_id, content_type)? {
+            progress_repo.record_section(chapter_id, content_type)?;
+            skipped += 1;
+        }
+    }
+
+    Ok(Json(SkipChapterResponse {
+        sections_skipped: skipped,
+    }))
+}
+
+/// DELETE /api/v1/progress
+///
+/// Deletes all progress records, badges, and learner stats.
+async fn reset_progress(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let progress_repo = ProgressRepo::new(Arc::clone(&state.db));
+    progress_repo.delete_all()?;
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/progress", get(list_progress))
+        .route("/progress", get(list_progress).delete(reset_progress))
         .route(
             "/chapters/:chapter_id/sections/:section_id/complete",
             post(mark_section_complete),
         )
+        .route("/chapters/:chapter_id/skip", post(skip_chapter))
         .route("/learner/stats", get(get_learner_stats))
 }

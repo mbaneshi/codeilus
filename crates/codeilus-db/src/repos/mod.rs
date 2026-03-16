@@ -31,3 +31,5 @@ pub mod quiz_repo;
 pub use quiz_repo::{QuizRepo, QuizQuestionRow};
 pub mod annotation_repo;
 pub use annotation_repo::{AnnotationRepo, AnnotationRow};
+pub mod pipeline_repo;
+pub use pipeline_repo::PipelineRepo;

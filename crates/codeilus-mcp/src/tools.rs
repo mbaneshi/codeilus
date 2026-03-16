@@ -41,7 +41,7 @@ impl CodeilusTools {
         let _limit = input.limit.unwrap_or(20);
         debug!(query = %input.query, "query_symbols");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let symbol_repo = SymbolRepo::new(conn.clone());
         let file_repo = FileRepo::new(conn);
 
@@ -94,7 +94,7 @@ impl CodeilusTools {
         let input = params.0;
         debug!(symbol_id = ?input.symbol_id, "query_graph");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let edge_repo = EdgeRepo::new(conn.clone());
         let symbol_repo = SymbolRepo::new(conn);
 
@@ -168,7 +168,7 @@ impl CodeilusTools {
         let input = params.0;
         debug!(focus = %input.focus, "get_context");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let file_repo = FileRepo::new(conn.clone());
         let symbol_repo = SymbolRepo::new(conn);
 
@@ -237,7 +237,7 @@ impl CodeilusTools {
         let max_depth = input.depth.unwrap_or(3);
         debug!(symbol_id = input.symbol_id, max_depth, "get_impact");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let edge_repo = EdgeRepo::new(conn.clone());
         let symbol_repo = SymbolRepo::new(conn);
 
@@ -332,7 +332,7 @@ impl CodeilusTools {
         let input = params.0;
         debug!(file_id = ?input.file_id, "get_metrics");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let metrics_repo = FileMetricsRepo::new(conn);
 
         if let Some(fid) = input.file_id {
@@ -385,7 +385,7 @@ impl CodeilusTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         debug!("get_learning_status");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let progress_repo = ProgressRepo::new(conn);
 
         let stats = progress_repo
@@ -408,7 +408,7 @@ impl CodeilusTools {
         let input = params.0;
         debug!(symbol_id = input.symbol_id, "explain_symbol");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let narrative_repo = NarrativeRepo::new(conn.clone());
         let symbol_repo = SymbolRepo::new(conn);
 
@@ -454,7 +454,7 @@ impl CodeilusTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         debug!("understand_codebase");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let file_repo = FileRepo::new(conn.clone());
         let symbol_repo = SymbolRepo::new(conn.clone());
         let community_repo = CommunityRepo::new(conn.clone());
@@ -518,7 +518,7 @@ impl CodeilusTools {
         let max_depth = input.max_depth.unwrap_or(5);
         debug!(symbol = %input.symbol_name, max_depth, "trace_call_chain");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let symbol_repo = SymbolRepo::new(conn.clone());
         let edge_repo = EdgeRepo::new(conn.clone());
         let file_repo = FileRepo::new(conn);
@@ -592,7 +592,7 @@ impl CodeilusTools {
         let max_depth = input.depth.unwrap_or(2).min(3);
         debug!(symbol = %input.symbol_name, max_depth, "impact_analysis");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let symbol_repo = SymbolRepo::new(conn.clone());
         let edge_repo = EdgeRepo::new(conn.clone());
         let file_repo = FileRepo::new(conn);
@@ -668,7 +668,7 @@ impl CodeilusTools {
         let input = params.0;
         debug!(symbol = %input.symbol_name, "find_related_code");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let symbol_repo = SymbolRepo::new(conn.clone());
         let community_repo = CommunityRepo::new(conn.clone());
         let edge_repo = EdgeRepo::new(conn.clone());
@@ -771,7 +771,7 @@ impl CodeilusTools {
         let input = params.0;
         debug!(file = %input.file_path, "explain_file");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let file_repo = FileRepo::new(conn.clone());
         let symbol_repo = SymbolRepo::new(conn.clone());
         let metrics_repo = FileMetricsRepo::new(conn);
@@ -836,7 +836,7 @@ impl CodeilusTools {
         let input = params.0;
         debug!(symbol = %input.symbol_name, "find_tests_for");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let symbol_repo = SymbolRepo::new(conn.clone());
         let edge_repo = EdgeRepo::new(conn.clone());
         let file_repo = FileRepo::new(conn);
@@ -897,7 +897,7 @@ impl CodeilusTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         debug!("suggest_reading_order");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let file_repo = FileRepo::new(conn.clone());
         let symbol_repo = SymbolRepo::new(conn.clone());
         let edge_repo = EdgeRepo::new(conn.clone());
@@ -960,7 +960,7 @@ impl CodeilusTools {
         let cid = CommunityId(input.community_id);
         debug!(community_id = input.community_id, "get_community_context");
 
-        let conn = self.db.conn_arc();
+        let conn = Arc::clone(&self.db);
         let community_repo = CommunityRepo::new(conn.clone());
         let symbol_repo = SymbolRepo::new(conn.clone());
         let edge_repo = EdgeRepo::new(conn.clone());

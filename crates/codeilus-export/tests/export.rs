@@ -1,19 +1,18 @@
 use codeilus_db::{DbPool, Migrator};
 use codeilus_export::*;
+use std::sync::Arc;
 
 /// Create an in-memory DB with migrations applied and some test data inserted.
-fn setup_db() -> DbPool {
+fn setup_db() -> Arc<DbPool> {
     let db = DbPool::in_memory().unwrap();
     Migrator::new(&db.connection()).apply_pending().unwrap();
-    db
+    Arc::new(db)
 }
 
 /// Insert test data into the DB: files, symbols, narratives, communities, patterns, metrics.
-fn seed_db(db: &DbPool) {
-    let conn = db.conn_arc();
-
+fn seed_db(db: &Arc<DbPool>) {
     // Files
-    let file_repo = codeilus_db::FileRepo::new(conn.clone());
+    let file_repo = codeilus_db::FileRepo::new(Arc::clone(db));
     let fids = file_repo
         .insert_batch(&[
             ("src/main.rs".to_string(), Some("rust".to_string()), 100),
@@ -23,7 +22,7 @@ fn seed_db(db: &DbPool) {
         .unwrap();
 
     // Symbols
-    let sym_repo = codeilus_db::SymbolRepo::new(conn.clone());
+    let sym_repo = codeilus_db::SymbolRepo::new(Arc::clone(db));
     sym_repo
         .insert_batch(&[
             (fids[0], "main".to_string(), "function".to_string(), 1, 10, None),
@@ -34,7 +33,7 @@ fn seed_db(db: &DbPool) {
         .unwrap();
 
     // Narratives
-    let narr_repo = codeilus_db::NarrativeRepo::new(conn.clone());
+    let narr_repo = codeilus_db::NarrativeRepo::new(Arc::clone(db));
     narr_repo.insert("overview", None, "This is a test project for export.", false).unwrap();
     narr_repo.insert("architecture", None, "The architecture has two modules.", false).unwrap();
     narr_repo
@@ -50,7 +49,7 @@ fn seed_db(db: &DbPool) {
     narr_repo.insert("why_trending", None, "Great developer experience.", false).unwrap();
 
     // Communities
-    let comm_repo = codeilus_db::CommunityRepo::new(conn.clone());
+    let comm_repo = codeilus_db::CommunityRepo::new(Arc::clone(db));
     let cids = comm_repo
         .insert_batch(&[("core".to_string(), 0.85), ("utils".to_string(), 0.72)])
         .unwrap();
@@ -64,7 +63,7 @@ fn seed_db(db: &DbPool) {
         .unwrap();
 
     // Patterns
-    let pat_repo = codeilus_db::PatternRepo::new(conn.clone());
+    let pat_repo = codeilus_db::PatternRepo::new(Arc::clone(db));
     pat_repo
         .insert(&codeilus_db::PatternRow {
             id: 0,
@@ -77,12 +76,12 @@ fn seed_db(db: &DbPool) {
         .unwrap();
 
     // File metrics
-    let metrics_repo = codeilus_db::FileMetricsRepo::new(conn.clone());
+    let metrics_repo = codeilus_db::FileMetricsRepo::new(Arc::clone(db));
     metrics_repo.insert(fids[0], 100, 5.0, 10, 2, 0.8).unwrap();
     metrics_repo.insert(fids[1], 200, 12.0, 25, 3, 0.9).unwrap();
 }
 
-fn make_export_data(db: &DbPool) -> ExportData {
+fn make_export_data(db: &Arc<DbPool>) -> ExportData {
     codeilus_export::data_loader::load_export_data("test-repo", db).unwrap()
 }
 

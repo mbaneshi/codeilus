@@ -1,8 +1,10 @@
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use codeilus_core::ids::{EdgeId, SymbolId};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EdgeRow {
@@ -14,12 +16,12 @@ pub struct EdgeRow {
 }
 
 pub struct EdgeRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl EdgeRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     /// Insert a single edge.
@@ -30,7 +32,7 @@ impl EdgeRepo {
         kind: &str,
         confidence: f64,
     ) -> CodeilusResult<EdgeId> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, ?3, ?4)",
             params![source_id.0, target_id.0, kind, confidence],
@@ -44,7 +46,7 @@ impl EdgeRepo {
         &self,
         edges: &[(SymbolId, SymbolId, String, f64)],
     ) -> CodeilusResult<Vec<EdgeId>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -68,7 +70,7 @@ impl EdgeRepo {
 
     /// List edges from a symbol (outgoing).
     pub fn list_from(&self, source_id: SymbolId) -> CodeilusResult<Vec<EdgeRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT id, source_id, target_id, kind, confidence FROM edges WHERE source_id = ?1",
@@ -94,7 +96,7 @@ impl EdgeRepo {
 
     /// List edges to a symbol (incoming).
     pub fn list_to(&self, target_id: SymbolId) -> CodeilusResult<Vec<EdgeRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT id, source_id, target_id, kind, confidence FROM edges WHERE target_id = ?1",
@@ -120,7 +122,7 @@ impl EdgeRepo {
 
     /// List all edges of a specific kind.
     pub fn list_by_kind(&self, kind: &str) -> CodeilusResult<Vec<EdgeRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT id, source_id, target_id, kind, confidence FROM edges WHERE kind = ?1",
@@ -146,7 +148,7 @@ impl EdgeRepo {
 
     /// Count total edges.
     pub fn count(&self) -> CodeilusResult<usize> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM edges", [], |row| row.get(0))
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -155,7 +157,7 @@ impl EdgeRepo {
 
     /// Delete all edges (for re-analysis).
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM edges", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())

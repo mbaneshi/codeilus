@@ -1,10 +1,10 @@
 <script lang="ts">
   import {
-    fetchGraph, fetchCommunities, fetchChapters, fetchFiles, fetchProgress,
+    fetchGraph, fetchCommunityGraph, fetchCommunities, fetchChapters, fetchFiles, fetchProgress,
     fetchNarrativeByTarget, fetchAnnotations, createAnnotation, updateAnnotation,
     toggleAnnotationFlag, deleteAnnotation,
   } from '$lib/api';
-  import type { GraphNode, GraphEdge, Community, Chapter, FileRow, Progress, Annotation } from '$lib/types';
+  import type { GraphNode, GraphEdge, Community, CommunityGraphNode, CommunityGraphEdge, Chapter, FileRow, Progress, Annotation } from '$lib/types';
   import Markdown from '$lib/Markdown.svelte';
   import {
     ArrowLeft, ArrowRight, BookOpen, Code2, FileCode, Filter, GitBranch, Layers,
@@ -46,6 +46,14 @@
     intermediate: { bg: 'rgba(251,191,36,0.15)', text: '#fbbf24', border: 'rgba(251,191,36,0.3)' },
     advanced:     { bg: 'rgba(248,113,113,0.15)', text: '#f87171', border: 'rgba(248,113,113,0.3)' },
   };
+
+  // ── Zoom level state ──
+  type ZoomLevel = 'communities' | 'community-detail' | 'symbol-focus';
+  let zoomLevel = $state<ZoomLevel>('communities');
+  let selectedCommunityId = $state<number | null>(null);
+  let selectedSymbolId = $state<number | null>(null);
+  let communityGraphNodes = $state<CommunityGraphNode[]>([]);
+  let communityGraphEdges = $state<CommunityGraphEdge[]>([]);
 
   // ── Core state ──
   let loading = $state(true);
@@ -316,6 +324,136 @@
     highlightedNodes = new Set();
   }
 
+  // ── Zoom level navigation ──
+  function zoomToCommunityDetail(communityId: number) {
+    zoomLevel = 'community-detail';
+    selectedCommunityId = communityId;
+    selectedSymbolId = null;
+    selectedCommunity = communityId;
+    selectedNode = null;
+    clearHighlight();
+    updateGraphForZoom();
+  }
+
+  function zoomToSymbolFocus(symbolId: number) {
+    zoomLevel = 'symbol-focus';
+    selectedSymbolId = symbolId;
+    const node = allNodes.find(n => n.id === symbolId);
+    if (node) {
+      selectedNode = node;
+      highlightConnected(symbolId);
+    }
+    updateGraphForZoom();
+  }
+
+  function zoomBack() {
+    if (zoomLevel === 'symbol-focus') {
+      zoomLevel = 'community-detail';
+      selectedSymbolId = null;
+      selectedNode = null;
+      clearHighlight();
+      if (selectedCommunityId !== null) {
+        selectedCommunity = selectedCommunityId;
+      }
+      updateGraphForZoom();
+    } else if (zoomLevel === 'community-detail') {
+      zoomLevel = 'communities';
+      selectedCommunityId = null;
+      selectedCommunity = null;
+      selectedNode = null;
+      clearHighlight();
+      updateGraphForZoom();
+    }
+  }
+
+  function zoomToTop() {
+    zoomLevel = 'communities';
+    selectedCommunityId = null;
+    selectedSymbolId = null;
+    selectedCommunity = null;
+    selectedNode = null;
+    clearHighlight();
+    updateGraphForZoom();
+  }
+
+  function updateGraphForZoom() {
+    if (!graph3d) return;
+
+    if (zoomLevel === 'communities') {
+      // Show community-level graph
+      const gData = {
+        nodes: communityGraphNodes.map(n => ({
+          id: n.id,
+          name: n.label || `Community ${n.id}`,
+          kind: 'community',
+          community_id: n.id,
+          file_id: 0,
+          val: Math.max(5, Math.min(30, 5 + n.member_count * 0.8)),
+          member_count: n.member_count,
+          cohesion: n.cohesion,
+          __isCommunity: true,
+        })),
+        links: communityGraphEdges.map(e => ({
+          source: e.source_id,
+          target: e.target_id,
+          kind: 'COMMUNITY_LINK',
+          confidence: 1,
+          weight: e.weight,
+        })),
+      };
+      graph3d.graphData(gData);
+    } else if (zoomLevel === 'community-detail' && selectedCommunityId !== null) {
+      // Show symbols within selected community
+      const nodes = allNodes.filter(n => n.community_id === selectedCommunityId);
+      const nodeIds = new Set(nodes.map(n => n.id));
+      const edges = allEdges.filter(e => nodeIds.has(e.source_id) && nodeIds.has(e.target_id));
+      const gData = {
+        nodes: nodes.map(n => ({
+          id: n.id,
+          name: n.name,
+          kind: n.kind,
+          community_id: n.community_id,
+          file_id: n.file_id,
+          val: getNodeSize(n.id),
+        })),
+        links: edges.map(e => ({
+          source: e.source_id,
+          target: e.target_id,
+          kind: e.kind,
+          confidence: e.confidence,
+        })),
+      };
+      graph3d.graphData(gData);
+    } else if (zoomLevel === 'symbol-focus' && selectedSymbolId !== null) {
+      // Show selected symbol and its direct connections
+      const connected = new Set<number>([selectedSymbolId]);
+      for (const e of allEdges) {
+        if (e.source_id === selectedSymbolId) connected.add(e.target_id);
+        if (e.target_id === selectedSymbolId) connected.add(e.source_id);
+      }
+      const nodes = allNodes.filter(n => connected.has(n.id));
+      const nodeIds = new Set(nodes.map(n => n.id));
+      const edges = allEdges.filter(e => nodeIds.has(e.source_id) && nodeIds.has(e.target_id));
+      const gData = {
+        nodes: nodes.map(n => ({
+          id: n.id,
+          name: n.name,
+          kind: n.kind,
+          community_id: n.community_id,
+          file_id: n.file_id,
+          val: n.id === selectedSymbolId ? getNodeSize(n.id) * 1.5 : getNodeSize(n.id),
+        })),
+        links: edges.map(e => ({
+          source: e.source_id,
+          target: e.target_id,
+          kind: e.kind,
+          confidence: e.confidence,
+        })),
+      };
+      graph3d.graphData(gData);
+    }
+  }
+
   // ── Feature 1: Load narrative for node ──
   async function loadNodeNarrative(symbolId: number) {
     const cacheKey = `symbol:${symbolId}`;
@@ -485,10 +623,12 @@
 
   // ── Load all data ──
   if (typeof window !== 'undefined') {
-    Promise.all([fetchGraph(), fetchCommunities(), fetchChapters(), fetchFiles(), fetchProgress(), fetchAnnotations()])
-      .then(([graph, comms, chs, fls, prog, annots]) => {
+    Promise.all([fetchGraph(), fetchCommunityGraph(), fetchCommunities(), fetchChapters(), fetchFiles(), fetchProgress(), fetchAnnotations()])
+      .then(([graph, commGraph, comms, chs, fls, prog, annots]) => {
         allNodes = graph.nodes;
         allEdges = graph.edges;
+        communityGraphNodes = commGraph.nodes;
+        communityGraphEdges = commGraph.edges;
         communities = comms.sort((a, b) => b.member_count - a.member_count);
         chapters = chs;
         files = fls;
@@ -510,7 +650,28 @@
     import('3d-force-graph').then(({ default: ForceGraph3D }) => {
       const nodeMap = new Map(allNodes.map(n => [n.id, n]));
 
-      const gData = {
+      // Start with community-level view if community data is available
+      const hasCommunityData = communityGraphNodes.length > 0;
+      const gData = hasCommunityData ? {
+        nodes: communityGraphNodes.map(n => ({
+          id: n.id,
+          name: n.label || `Community ${n.id}`,
+          kind: 'community',
+          community_id: n.id,
+          file_id: 0,
+          val: Math.max(5, Math.min(30, 5 + n.member_count * 0.8)),
+          member_count: n.member_count,
+          cohesion: n.cohesion,
+          __isCommunity: true,
+        })),
+        links: communityGraphEdges.map(e => ({
+          source: e.source_id,
+          target: e.target_id,
+          kind: 'COMMUNITY_LINK',
+          confidence: 1,
+          weight: e.weight,
+        })),
+      } : {
         nodes: allNodes.map(n => ({
           id: n.id,
           name: n.name,
@@ -526,6 +687,11 @@
           confidence: e.confidence,
         })),
       };
+
+      // Set initial zoom level
+      if (!hasCommunityData) {
+        zoomLevel = 'community-detail';
+      }
 
       const fg = ForceGraph3D()(containerEl!)
         .backgroundColor('#0a0a1a')
@@ -686,6 +852,22 @@
       }
 
       fg.onNodeClick((node: any) => {
+        // Handle zoom level transitions
+        if (zoomLevel === 'communities' && node.__isCommunity) {
+          // Click on community node -> drill into community detail
+          zoomToCommunityDetail(node.id);
+          return;
+        }
+
+        if (zoomLevel === 'community-detail') {
+          // Click on symbol node -> drill into symbol focus
+          const graphNode = nodeMap.get(node.id) ?? null;
+          if (graphNode) {
+            zoomToSymbolFocus(graphNode.id);
+            return;
+          }
+        }
+
         const graphNode = nodeMap.get(node.id) ?? null;
         selectedNode = graphNode;
         if (graphNode) {
@@ -724,6 +906,7 @@
   });
 
   // Update graph data when filters change (not on initial load)
+  // Only applies when not in community overview mode (zoom handles its own data)
   let filtersApplied = false;
   $effect(() => {
     // Read filter deps to subscribe
@@ -738,6 +921,9 @@
       filtersApplied = true;
       return;
     }
+
+    // Don't override zoom-controlled graph data from communities view
+    if (zoomLevel === 'communities') return;
 
     const data = filteredData;
     graph3d.graphData({
@@ -781,6 +967,58 @@
       <div class="text-center">
         <p class="text-gray-400 text-lg mb-2">No graph data</p>
         <p class="text-gray-500">Run <code class="text-indigo-400 font-mono">codeilus analyze ./repo</code> first</p>
+      </div>
+    </div>
+  {/if}
+
+  <!-- ZOOM LEVEL CONTROLS -->
+  {#if !loading && allNodes.length > 0}
+    <div class="zoom-controls">
+      {#if zoomLevel !== 'communities'}
+        <button class="zoom-back-btn" onclick={zoomBack} title="Go back one level">
+          <ArrowLeft size={14} />
+          Back
+        </button>
+      {/if}
+
+      <div class="zoom-breadcrumb">
+        <button
+          class="zoom-crumb {zoomLevel === 'communities' ? 'active' : ''}"
+          onclick={zoomToTop}
+        >
+          <Layers size={12} />
+          Communities
+        </button>
+
+        {#if zoomLevel === 'community-detail' || zoomLevel === 'symbol-focus'}
+          {@const comm = communities.find(c => c.id === selectedCommunityId)}
+          <span class="zoom-sep">/</span>
+          <button
+            class="zoom-crumb {zoomLevel === 'community-detail' ? 'active' : ''}"
+            onclick={() => { if (selectedCommunityId !== null) zoomToCommunityDetail(selectedCommunityId); }}
+          >
+            <span class="zoom-crumb-dot" style="background: {getColor(selectedCommunityId)}"></span>
+            {comm ? formatLabel(comm.label) : `Community ${selectedCommunityId}`}
+          </button>
+        {/if}
+
+        {#if zoomLevel === 'symbol-focus' && selectedNode}
+          <span class="zoom-sep">/</span>
+          <span class="zoom-crumb active">
+            <Code2 size={12} />
+            {selectedNode.name}
+          </span>
+        {/if}
+      </div>
+
+      <div class="zoom-level-badge">
+        {#if zoomLevel === 'communities'}
+          Overview
+        {:else if zoomLevel === 'community-detail'}
+          Module Detail
+        {:else}
+          Symbol Focus
+        {/if}
       </div>
     </div>
   {/if}
@@ -877,12 +1115,12 @@
           {#if sidebarTab === 'communities'}
             <!-- Community list -->
             <button
-              class="comm-item {selectedCommunity === null ? 'active' : ''}"
-              onclick={() => { selectedCommunity = null; selectedNode = null; clearHighlight(); }}
+              class="comm-item {zoomLevel === 'communities' ? 'active' : ''}"
+              onclick={zoomToTop}
             >
               <span class="comm-dot" style="background: linear-gradient(135deg, #6366f1, #ec4899, #14b8a6)"></span>
-              <span class="comm-name">All modules</span>
-              <span class="comm-count">{allNodes.length}</span>
+              <span class="comm-name">All communities</span>
+              <span class="comm-count">{communityGraphNodes.length || communities.length}</span>
             </button>
 
             {#each multiMemberCommunities as comm}
@@ -894,8 +1132,8 @@
                 onmouseleave={handleCommunityLeave}
               >
                 <button
-                  class="comm-item {selectedCommunity === comm.id ? 'active' : ''}"
-                  onclick={() => { selectedCommunity = selectedCommunity === comm.id ? null : comm.id; selectedNode = null; clearHighlight(); }}
+                  class="comm-item {selectedCommunityId === comm.id ? 'active' : ''}"
+                  onclick={() => { zoomToCommunityDetail(comm.id); }}
                 >
                   <span class="comm-dot" style="background: {COMMUNITY_COLORS[comm.id % COMMUNITY_COLORS.length]}">
                     {#if pStatus === 'completed'}
@@ -1147,7 +1385,7 @@
           {/if}
 
           <div class="community-card-actions">
-            <button class="cc-action" onclick={() => { selectedCommunity = hoveredCommunity; hoveredCommunity = null; }}>
+            <button class="cc-action" onclick={() => { if (hoveredCommunity !== null) { zoomToCommunityDetail(hoveredCommunity); hoveredCommunity = null; } }}>
               <Eye size={12} /> Focus
             </button>
             {#if chapter}
@@ -2055,4 +2293,48 @@
   .guidance-content { @apply flex items-center gap-2 text-[11px] text-gray-400; }
   .guidance-content strong { @apply text-gray-300 font-semibold; }
   .guidance-icon { @apply text-indigo-400 shrink-0; }
+
+  /* Zoom controls */
+  .zoom-controls {
+    @apply absolute top-4 left-1/2 z-20 flex items-center gap-2 px-3 py-2 rounded-xl;
+    transform: translateX(-50%);
+    background: rgba(10, 10, 26, 0.92);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  }
+  .zoom-back-btn {
+    @apply flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors;
+    background: rgba(255, 255, 255, 0.06);
+    color: #94a3b8;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .zoom-back-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: white;
+  }
+  .zoom-breadcrumb {
+    @apply flex items-center gap-1;
+  }
+  .zoom-crumb {
+    @apply flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors;
+    color: #64748b;
+    cursor: pointer;
+  }
+  .zoom-crumb:hover { color: #94a3b8; }
+  .zoom-crumb.active {
+    color: #e2e8f0;
+    background: rgba(99, 102, 241, 0.15);
+  }
+  .zoom-crumb-dot {
+    @apply w-2 h-2 rounded-full inline-block;
+  }
+  .zoom-sep {
+    @apply text-gray-600 text-[11px];
+  }
+  .zoom-level-badge {
+    @apply text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded;
+    background: rgba(99, 102, 241, 0.12);
+    color: #818cf8;
+  }
 </style>

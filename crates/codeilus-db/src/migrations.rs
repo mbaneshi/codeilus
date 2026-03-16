@@ -11,6 +11,8 @@ const MIGRATION_004: &str = include_str!("../../../migrations/0004_annotations.s
 const MIGRATION_005: &str = include_str!("../../../migrations/0005_progress_unique.sql");
 const MIGRATION_006: &str = include_str!("../../../migrations/0006_seed_badges.sql");
 const MIGRATION_007: &str = include_str!("../../../migrations/0007_narrative_placeholder.sql");
+const MIGRATION_008: &str = include_str!("../../../migrations/0008_content_hash.sql");
+const MIGRATION_009: &str = include_str!("../../../migrations/0009_pipeline_runs.sql");
 
 pub struct Migrator<'a> {
     conn: &'a Connection,
@@ -138,6 +140,36 @@ impl<'a> Migrator<'a> {
                 .map_err(|e| CodeilusError::Database(Box::new(e)))?;
             applied += 1;
             info!("migration 0007 applied, now at version 7");
+        }
+
+        if current < 8 {
+            info!("applying migration 0008_content_hash.sql");
+            self.conn
+                .execute_batch(MIGRATION_008)
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version) VALUES (8)",
+                    [],
+                )
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            applied += 1;
+            info!("migration 0008 applied, now at version 8");
+        }
+
+        if current < 9 {
+            info!("applying migration 0009_pipeline_runs.sql");
+            self.conn
+                .execute_batch(MIGRATION_009)
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            self.conn
+                .execute(
+                    "INSERT INTO schema_version (version) VALUES (9)",
+                    [],
+                )
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            applied += 1;
+            info!("migration 0009 applied, now at version 9");
         }
 
         if applied == 0 {

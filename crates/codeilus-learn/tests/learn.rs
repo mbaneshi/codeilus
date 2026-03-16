@@ -364,17 +364,17 @@ fn progress_xp_section_and_chapter_bonus() {
         let migrator = Migrator::new(&conn);
         migrator.apply_pending().unwrap();
     }
-    let conn = pool.conn_arc();
+    let db = Arc::new(pool);
 
     // Insert a chapter with 6 sections
-    let repo = ChapterRepo::new(Arc::clone(&conn));
+    let repo = ChapterRepo::new(Arc::clone(&db));
     let ch_id = repo.insert(0, "Test Chapter", "desc", None, "beginner").unwrap();
     for kind in SectionKind::all() {
         repo.insert_section(ch_id, kind.as_str(), kind.title(), kind.as_str(), "sample content")
             .unwrap();
     }
 
-    let tracker = ProgressTracker::new(conn);
+    let tracker = ProgressTracker::new(db);
 
     // Complete 5 sections: 5 * 10 = 50 XP
     let section_kinds = SectionKind::all();
@@ -408,9 +408,9 @@ fn progress_quiz_xp_only_on_pass() {
         let migrator = Migrator::new(&conn);
         migrator.apply_pending().unwrap();
     }
-    let conn = pool.conn_arc();
+    let db = Arc::new(pool);
 
-    let repo = ChapterRepo::new(Arc::clone(&conn));
+    let repo = ChapterRepo::new(Arc::clone(&db));
     let ch_id = repo
         .insert(0, "Quiz Chapter", "desc", None, "beginner")
         .unwrap();
@@ -420,7 +420,7 @@ fn progress_quiz_xp_only_on_pass() {
             .unwrap();
     }
 
-    let tracker = ProgressTracker::new(conn);
+    let tracker = ProgressTracker::new(db);
 
     // Failed quiz: 0 XP
     let fail_update = tracker.record_quiz(ch_id, 0.3, false).unwrap();

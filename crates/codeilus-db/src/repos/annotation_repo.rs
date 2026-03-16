@@ -1,9 +1,11 @@
 //! Repository for user annotations on graph nodes and edges.
 
 use codeilus_core::error::{CodeilusError, CodeilusResult};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationRow {
@@ -17,16 +19,16 @@ pub struct AnnotationRow {
 }
 
 pub struct AnnotationRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl AnnotationRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     pub fn insert(&self, target_type: &str, target_id: i64, content: &str) -> CodeilusResult<i64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO annotations (target_type, target_id, content) VALUES (?1, ?2, ?3)",
             params![target_type, target_id, content],
@@ -36,7 +38,7 @@ impl AnnotationRepo {
     }
 
     pub fn update(&self, id: i64, content: &str) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "UPDATE annotations SET content = ?1, updated_at = datetime('now') WHERE id = ?2",
             params![content, id],
@@ -46,7 +48,7 @@ impl AnnotationRepo {
     }
 
     pub fn toggle_flag(&self, id: i64) -> CodeilusResult<bool> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "UPDATE annotations SET flagged = CASE WHEN flagged = 0 THEN 1 ELSE 0 END, updated_at = datetime('now') WHERE id = ?1",
             params![id],
@@ -63,7 +65,7 @@ impl AnnotationRepo {
     }
 
     pub fn delete(&self, id: i64) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM annotations WHERE id = ?1", params![id])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())
@@ -74,7 +76,7 @@ impl AnnotationRepo {
         target_type: &str,
         target_id: i64,
     ) -> CodeilusResult<Vec<AnnotationRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT id, target_type, target_id, content, flagged, created_at, updated_at \
@@ -102,7 +104,7 @@ impl AnnotationRepo {
     }
 
     pub fn list_all(&self) -> CodeilusResult<Vec<AnnotationRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT id, target_type, target_id, content, flagged, created_at, updated_at \
@@ -130,7 +132,7 @@ impl AnnotationRepo {
     }
 
     pub fn list_flagged(&self) -> CodeilusResult<Vec<AnnotationRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT id, target_type, target_id, content, flagged, created_at, updated_at \
@@ -158,7 +160,7 @@ impl AnnotationRepo {
     }
 
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM annotations", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())

@@ -5,6 +5,8 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
+use std::sync::Arc;
+
 use codeilus_db::AnnotationRepo;
 
 use crate::error::ApiError;
@@ -55,7 +57,7 @@ async fn list_annotations(
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<Vec<AnnotationResponse>>, ApiError> {
-    let repo = AnnotationRepo::new(state.db.conn_arc());
+    let repo = AnnotationRepo::new(Arc::clone(&state.db));
     let rows = if query.flagged.unwrap_or(false) {
         repo.list_flagged()?
     } else {
@@ -69,7 +71,7 @@ async fn list_by_target(
     State(state): State<AppState>,
     Path((target_type, target_id)): Path<(String, i64)>,
 ) -> Result<Json<Vec<AnnotationResponse>>, ApiError> {
-    let repo = AnnotationRepo::new(state.db.conn_arc());
+    let repo = AnnotationRepo::new(Arc::clone(&state.db));
     let rows = repo.list_by_target(&target_type, target_id)?;
     Ok(Json(rows.into_iter().map(to_response).collect()))
 }
@@ -79,7 +81,7 @@ async fn create_annotation(
     State(state): State<AppState>,
     Json(body): Json<CreateRequest>,
 ) -> Result<Json<AnnotationResponse>, ApiError> {
-    let repo = AnnotationRepo::new(state.db.conn_arc());
+    let repo = AnnotationRepo::new(Arc::clone(&state.db));
     let id = repo.insert(&body.target_type, body.target_id, &body.content)?;
     let rows = repo.list_by_target(&body.target_type, body.target_id)?;
     let row = rows
@@ -95,7 +97,7 @@ async fn update_annotation(
     Path(id): Path<i64>,
     Json(body): Json<UpdateRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let repo = AnnotationRepo::new(state.db.conn_arc());
+    let repo = AnnotationRepo::new(Arc::clone(&state.db));
     repo.update(id, &body.content)?;
     Ok(Json(serde_json::json!({ "id": id, "updated": true })))
 }
@@ -105,7 +107,7 @@ async fn toggle_flag(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let repo = AnnotationRepo::new(state.db.conn_arc());
+    let repo = AnnotationRepo::new(Arc::clone(&state.db));
     let flagged = repo.toggle_flag(id)?;
     Ok(Json(serde_json::json!({ "flagged": flagged })))
 }
@@ -115,7 +117,7 @@ async fn delete_annotation(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let repo = AnnotationRepo::new(state.db.conn_arc());
+    let repo = AnnotationRepo::new(Arc::clone(&state.db));
     repo.delete(id)?;
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
@@ -124,12 +126,12 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/annotations", get(list_annotations).post(create_annotation))
         .route(
-            "/annotations/{id}",
-            put(update_annotation).delete(axum::routing::delete(delete_annotation)),
+            "/annotations/:id",
+            put(update_annotation).delete(delete_annotation),
         )
-        .route("/annotations/{id}/flag", post(toggle_flag))
+        .route("/annotations/:id/flag", post(toggle_flag))
         .route(
-            "/annotations/{target_type}/{target_id}",
+            "/annotations/:target_type/:target_id",
             get(list_by_target),
         )
 }

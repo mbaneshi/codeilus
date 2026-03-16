@@ -1,7 +1,9 @@
 use codeilus_core::error::{CodeilusError, CodeilusResult};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HarvestRepoRow {
@@ -19,16 +21,16 @@ pub struct HarvestRepoRow {
 }
 
 pub struct HarvestRepoRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl HarvestRepoRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     pub fn insert(&self, repo: &HarvestRepoRow) -> CodeilusResult<i64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO harvested_repos (owner, name, description, language, stars_today, url, status, harvested_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
@@ -47,7 +49,7 @@ impl HarvestRepoRepo {
     }
 
     pub fn insert_batch(&self, repos: &[HarvestRepoRow]) -> CodeilusResult<Vec<i64>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -91,7 +93,7 @@ impl HarvestRepoRepo {
         owner: &str,
         name: &str,
     ) -> CodeilusResult<Option<HarvestRepoRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let result = conn.query_row(
             "SELECT id, owner, name, description, language, stars_today, url, status, harvested_date FROM harvested_repos WHERE owner = ?1 AND name = ?2 ORDER BY id DESC LIMIT 1",
             params![owner, name],
@@ -119,7 +121,7 @@ impl HarvestRepoRepo {
     }
 
     pub fn list(&self) -> CodeilusResult<Vec<HarvestRepoRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT id, owner, name, description, language, stars_today, url, status, harvested_date FROM harvested_repos ORDER BY id")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -148,7 +150,7 @@ impl HarvestRepoRepo {
     }
 
     pub fn list_by_status(&self, status: &str) -> CodeilusResult<Vec<HarvestRepoRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT id, owner, name, description, language, stars_today, url, status, harvested_date FROM harvested_repos WHERE status = ?1 ORDER BY id")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -177,7 +179,7 @@ impl HarvestRepoRepo {
     }
 
     pub fn list_by_date(&self, date: &str) -> CodeilusResult<Vec<HarvestRepoRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT id, owner, name, description, language, stars_today, url, status, harvested_date FROM harvested_repos WHERE harvested_date = ?1 ORDER BY id")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -206,7 +208,7 @@ impl HarvestRepoRepo {
     }
 
     pub fn update_status(&self, id: i64, status: &str) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "UPDATE harvested_repos SET status = ?1 WHERE id = ?2",
             params![status, id],
@@ -216,7 +218,7 @@ impl HarvestRepoRepo {
     }
 
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM harvested_repos", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())

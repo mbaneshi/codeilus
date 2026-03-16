@@ -1,8 +1,10 @@
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use codeilus_core::ids::SymbolId;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessRow {
@@ -21,16 +23,16 @@ pub struct ProcessStepRow {
 }
 
 pub struct ProcessRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl ProcessRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     pub fn insert(&self, name: &str, entry_symbol_id: SymbolId) -> CodeilusResult<i64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO processes (name, entry_symbol_id, description) VALUES (?1, ?2, '')",
             params![name, entry_symbol_id.0],
@@ -46,7 +48,7 @@ impl ProcessRepo {
         symbol_id: SymbolId,
         description: &str,
     ) -> CodeilusResult<i64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO process_steps (process_id, step_order, symbol_id) VALUES (?1, ?2, ?3)",
             params![process_id, step_order, symbol_id.0],
@@ -57,7 +59,7 @@ impl ProcessRepo {
     }
 
     pub fn get(&self, id: i64) -> CodeilusResult<ProcessRow> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.query_row(
             "SELECT id, name, entry_symbol_id FROM processes WHERE id = ?1",
             params![id],
@@ -78,7 +80,7 @@ impl ProcessRepo {
     }
 
     pub fn list(&self) -> CodeilusResult<Vec<ProcessRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT id, name, entry_symbol_id FROM processes")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -99,7 +101,7 @@ impl ProcessRepo {
     }
 
     pub fn list_steps(&self, process_id: i64) -> CodeilusResult<Vec<ProcessStepRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT rowid, process_id, step_order, symbol_id FROM process_steps WHERE process_id = ?1 ORDER BY step_order",
@@ -124,7 +126,7 @@ impl ProcessRepo {
     }
 
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM process_steps", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         conn.execute("DELETE FROM processes", [])

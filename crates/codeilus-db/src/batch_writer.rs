@@ -1,10 +1,10 @@
 //! Batch writer: events accumulate in a channel and flush to SQLite in batches.
 
+use crate::pool::DbPool;
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use codeilus_core::events::CodeilusEvent;
 use crossbeam_channel::{bounded, select, tick, Receiver, Sender};
-use rusqlite::Connection;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tracing::{debug, error, info};
@@ -18,10 +18,10 @@ pub struct BatchWriter {
 }
 
 impl BatchWriter {
-    pub fn spawn(conn: Arc<Mutex<Connection>>) -> Self {
+    pub fn spawn(db: Arc<DbPool>) -> Self {
         let (sender, receiver) = bounded::<CodeilusEvent>(1024);
         let handle = thread::spawn(move || {
-            writer_loop(conn, receiver);
+            writer_loop(db, receiver);
         });
         Self {
             sender,
@@ -46,7 +46,7 @@ impl BatchWriter {
     }
 }
 
-fn writer_loop(conn: Arc<Mutex<Connection>>, receiver: Receiver<CodeilusEvent>) {
+fn writer_loop(db: Arc<DbPool>, receiver: Receiver<CodeilusEvent>) {
     let mut buffer: Vec<CodeilusEvent> = Vec::with_capacity(BATCH_SIZE);
     let ticker = tick(FLUSH_INTERVAL);
 
@@ -57,12 +57,12 @@ fn writer_loop(conn: Arc<Mutex<Connection>>, receiver: Receiver<CodeilusEvent>) 
                     Ok(event) => {
                         buffer.push(event);
                         if buffer.len() >= BATCH_SIZE {
-                            flush_to_db(&conn, &mut buffer);
+                            flush_to_db(&db, &mut buffer);
                         }
                     }
                     Err(_) => {
                         if !buffer.is_empty() {
-                            flush_to_db(&conn, &mut buffer);
+                            flush_to_db(&db, &mut buffer);
                         }
                         info!("batch writer shutting down");
                         return;
@@ -71,15 +71,15 @@ fn writer_loop(conn: Arc<Mutex<Connection>>, receiver: Receiver<CodeilusEvent>) 
             }
             recv(ticker) -> _ => {
                 if !buffer.is_empty() {
-                    flush_to_db(&conn, &mut buffer);
+                    flush_to_db(&db, &mut buffer);
                 }
             }
         }
     }
 }
 
-fn flush_to_db(conn: &Arc<Mutex<Connection>>, buffer: &mut Vec<CodeilusEvent>) {
-    let conn = conn.lock().expect("db mutex poisoned");
+fn flush_to_db(db: &DbPool, buffer: &mut Vec<CodeilusEvent>) {
+    let conn = db.connection();
     let count = buffer.len();
 
     let tx = match conn.unchecked_transaction() {

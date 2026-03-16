@@ -13,7 +13,7 @@ pub use repos::{
     CommunityRow, EdgeRepo, EdgeRow, FileMetricsRepo, FileMetricsRow, FileRepo, FileRow,
     HarvestRepoRepo, HarvestRepoRow, LearnerStatsRow, NarrativeRepo, NarrativeRow, PatternRepo,
     PatternRow, ProcessRepo, ProcessRow, ProcessStepRow, ProgressRepo, ProgressRow,
-    QuizQuestionRow, QuizRepo, SymbolRepo, SymbolRow,
+    PipelineRepo, QuizQuestionRow, QuizRepo, SymbolRepo, SymbolRow,
 };
 
 use std::collections::HashMap;
@@ -27,25 +27,30 @@ use repos::symbols::NewSymbol;
 impl DbPool {
     /// Delete all analysis data in FK-safe order, enabling re-analysis.
     pub fn clear_analysis_data(&self) -> CodeilusResult<()> {
-        let conn_arc = self.conn_arc();
-        QuizRepo::new(conn_arc.clone()).delete_all()?;
-        ProgressRepo::new(conn_arc.clone()).delete_all()?;
-        ChapterRepo::new(conn_arc.clone()).delete_all()?;
-        ProcessRepo::new(conn_arc.clone()).delete_all()?;
-        CommunityRepo::new(conn_arc.clone()).delete_all()?;
-        NarrativeRepo::new(conn_arc.clone()).delete_all()?;
-        PatternRepo::new(conn_arc.clone()).delete_all()?;
-        FileMetricsRepo::new(conn_arc.clone()).delete_all()?;
-        EdgeRepo::new(conn_arc.clone()).delete_all()?;
-        SymbolRepo::new(conn_arc.clone()).delete_all()?;
-        FileRepo::new(conn_arc).delete_all()?;
+        let conn = self.connection();
+        // FK-safe deletion order: children before parents.
+        for table in &[
+            "quiz_questions",
+            "progress",
+            "chapter_sections",
+            "chapters",
+            "process_steps",
+            "processes",
+            "communities",
+            "narratives",
+            "patterns",
+            "file_metrics",
+            "edges",
+            "symbols",
+            "files",
+        ] {
+            conn.execute(&format!("DELETE FROM {table}"), [])
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        }
         Ok(())
     }
 
     /// Persist a collection of parsed files into the database.
-    ///
-    /// For Sprint 1 this inserts rows into `files` and `symbols`. Edge persistence
-    /// is intentionally deferred until we have more robust resolution in Sprint 2.
     pub fn persist_parsed_files(&self, parsed: &[ParsedFile]) -> Result<(), CodeilusError> {
         let mut conn = self.connection();
         let tx = conn
@@ -58,11 +63,23 @@ impl DbPool {
         // Insert files.
         let new_files: Vec<NewFile> = parsed
             .iter()
-            .map(|pf| NewFile {
-                path: pf.path.to_string_lossy().to_string(),
-                language: pf.language,
-                sloc: Some(pf.sloc as i64),
-                last_modified: None,
+            .map(|pf| {
+                // Read file content to compute mtime for incremental parsing
+                let last_modified = std::fs::metadata(&pf.path)
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| {
+                        let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
+                        chrono::DateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
+                    });
+
+                NewFile {
+                    path: pf.path.to_string_lossy().to_string(),
+                    language: pf.language,
+                    sloc: Some(pf.sloc as i64),
+                    last_modified,
+                    content_hash: None,
+                }
             })
             .collect();
 

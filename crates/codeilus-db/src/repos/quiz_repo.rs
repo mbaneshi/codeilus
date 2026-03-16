@@ -2,9 +2,11 @@
 
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use codeilus_core::ids::ChapterId;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuizQuestionRow {
@@ -18,12 +20,12 @@ pub struct QuizQuestionRow {
 }
 
 pub struct QuizRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl QuizRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     pub fn insert(
@@ -35,7 +37,7 @@ impl QuizRepo {
         correct_index: usize,
         explanation: &str,
     ) -> CodeilusResult<i64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let options_json =
             serde_json::to_string(options).unwrap_or_else(|_| "[]".to_string());
         let answer = options
@@ -52,7 +54,7 @@ impl QuizRepo {
     }
 
     pub fn list_by_chapter(&self, chapter_id: ChapterId) -> CodeilusResult<Vec<QuizQuestionRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT id, chapter_id, question, kind, COALESCE(options, '[]'), COALESCE(correct_index, 0), COALESCE(explanation, '') FROM quiz_questions WHERE chapter_id = ?1",
@@ -85,7 +87,7 @@ impl QuizRepo {
     }
 
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM quiz_attempts", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         conn.execute("DELETE FROM quiz_questions", [])

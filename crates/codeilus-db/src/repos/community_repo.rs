@@ -1,8 +1,10 @@
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use codeilus_core::ids::{CommunityId, SymbolId};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommunityRow {
@@ -12,16 +14,16 @@ pub struct CommunityRow {
 }
 
 pub struct CommunityRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl CommunityRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     pub fn insert(&self, label: &str, cohesion: f64) -> CodeilusResult<CommunityId> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO communities (name, description, cohesion_score) VALUES (?1, '', ?2)",
             params![label, cohesion],
@@ -34,7 +36,7 @@ impl CommunityRepo {
         &self,
         communities: &[(String, f64)],
     ) -> CodeilusResult<Vec<CommunityId>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -61,7 +63,7 @@ impl CommunityRepo {
         community_id: CommunityId,
         symbol_id: SymbolId,
     ) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT OR IGNORE INTO community_members (community_id, symbol_id) VALUES (?1, ?2)",
             params![community_id.0, symbol_id.0],
@@ -74,7 +76,7 @@ impl CommunityRepo {
         &self,
         members: &[(CommunityId, SymbolId)],
     ) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -95,7 +97,7 @@ impl CommunityRepo {
     }
 
     pub fn get(&self, id: CommunityId) -> CodeilusResult<CommunityRow> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.query_row(
             "SELECT id, name, cohesion_score FROM communities WHERE id = ?1",
             params![id.0],
@@ -116,7 +118,7 @@ impl CommunityRepo {
     }
 
     pub fn list(&self) -> CodeilusResult<Vec<CommunityRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT id, name, cohesion_score FROM communities")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -137,7 +139,7 @@ impl CommunityRepo {
     }
 
     pub fn list_members(&self, community_id: CommunityId) -> CodeilusResult<Vec<SymbolId>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT symbol_id FROM community_members WHERE community_id = ?1")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -155,7 +157,7 @@ impl CommunityRepo {
 
     /// Find which community a symbol belongs to.
     pub fn find_by_symbol(&self, symbol_id: SymbolId) -> CodeilusResult<Option<CommunityRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let result = conn.query_row(
             "SELECT c.id, c.name, c.cohesion_score FROM communities c \
              JOIN community_members cm ON cm.community_id = c.id \
@@ -177,7 +179,7 @@ impl CommunityRepo {
     }
 
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM community_members", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         conn.execute("DELETE FROM communities", [])

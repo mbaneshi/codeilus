@@ -2,9 +2,11 @@
 
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use codeilus_core::ids::ChapterId;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChapterRow {
@@ -27,12 +29,12 @@ pub struct ChapterSectionRow {
 }
 
 pub struct ChapterRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl ChapterRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     pub fn insert(
@@ -43,7 +45,7 @@ impl ChapterRepo {
         community_id: Option<i64>,
         difficulty: &str,
     ) -> CodeilusResult<ChapterId> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO chapters (order_index, title, description, community_id, difficulty) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![order_index, title, description, community_id, difficulty],
@@ -60,7 +62,7 @@ impl ChapterRepo {
         kind: &str,
         content: &str,
     ) -> CodeilusResult<i64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let order: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM chapter_sections WHERE chapter_id = ?1",
@@ -79,7 +81,7 @@ impl ChapterRepo {
     }
 
     pub fn get(&self, id: ChapterId) -> CodeilusResult<ChapterRow> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.query_row(
             "SELECT id, order_index, title, description, community_id, difficulty FROM chapters WHERE id = ?1",
             params![id.0],
@@ -103,7 +105,7 @@ impl ChapterRepo {
     }
 
     pub fn list_ordered(&self) -> CodeilusResult<Vec<ChapterRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT id, order_index, title, description, community_id, difficulty FROM chapters ORDER BY order_index")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -127,7 +129,7 @@ impl ChapterRepo {
     }
 
     pub fn list_sections(&self, chapter_id: ChapterId) -> CodeilusResult<Vec<ChapterSectionRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT id, chapter_id, content_type, title, content_type, COALESCE(content, '') FROM chapter_sections WHERE chapter_id = ?1 ORDER BY order_index")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -151,7 +153,7 @@ impl ChapterRepo {
     }
 
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM chapter_sections", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         conn.execute("DELETE FROM chapters", [])

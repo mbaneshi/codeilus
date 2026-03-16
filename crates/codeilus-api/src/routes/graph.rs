@@ -1,6 +1,6 @@
 //! Graph, community, and process API routes.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use axum::extract::{Query, State};
 use axum::routing::get;
@@ -71,6 +71,125 @@ pub struct ProcessStepResponse {
     pub description: String,
 }
 
+#[derive(Serialize)]
+pub struct CommunityGraphResponse {
+    pub nodes: Vec<CommunityGraphNode>,
+    pub edges: Vec<CommunityGraphEdge>,
+}
+
+#[derive(Serialize)]
+pub struct CommunityGraphNode {
+    pub id: i64,
+    pub label: String,
+    pub member_count: usize,
+    pub cohesion: f64,
+}
+
+#[derive(Serialize)]
+pub struct CommunityGraphEdge {
+    pub source_id: i64,
+    pub target_id: i64,
+    pub weight: usize,
+}
+
+/// GET /api/v1/graph/communities — Community-level graph
+///
+/// Returns communities as nodes and aggregated inter-community edges.
+async fn get_community_graph(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let cache_key = "graph:communities".to_string();
+    if let Some(cached) = state.cache.json.get(&cache_key) {
+        return Ok(Json(cached));
+    }
+
+    let conn = state.db.connection();
+
+    // 1. Load all communities
+    let mut comm_stmt = conn
+        .prepare("SELECT id, name, cohesion_score FROM communities")
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+    let comm_rows = comm_stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<f64>>(2)?,
+            ))
+        })
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+
+    let mut community_info: HashMap<i64, (String, f64)> = HashMap::new();
+    for row in comm_rows {
+        let (id, name, cohesion) = row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        community_info.insert(id, (name.unwrap_or_default(), cohesion.unwrap_or(0.0)));
+    }
+
+    // 2. Load symbol -> community mappings
+    let mut member_stmt = conn
+        .prepare("SELECT symbol_id, community_id FROM community_members")
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+    let member_rows = member_stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+
+    let mut symbol_to_community: HashMap<i64, i64> = HashMap::new();
+    let mut community_member_counts: HashMap<i64, usize> = HashMap::new();
+    for row in member_rows {
+        let (symbol_id, community_id) =
+            row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        symbol_to_community.insert(symbol_id, community_id);
+        *community_member_counts.entry(community_id).or_insert(0) += 1;
+    }
+
+    // 3. Build community nodes
+    let nodes: Vec<CommunityGraphNode> = community_info
+        .iter()
+        .map(|(&id, (label, cohesion))| CommunityGraphNode {
+            id,
+            label: label.clone(),
+            member_count: community_member_counts.get(&id).copied().unwrap_or(0),
+            cohesion: *cohesion,
+        })
+        .collect();
+
+    // 4. Load all edges and aggregate to community level
+    let mut edge_stmt = conn
+        .prepare("SELECT source_id, target_id FROM edges")
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+    let edge_rows = edge_stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+
+    let mut inter_community_edges: HashMap<(i64, i64), usize> = HashMap::new();
+    for row in edge_rows {
+        let (src, dst) = row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        let src_comm = symbol_to_community.get(&src);
+        let dst_comm = symbol_to_community.get(&dst);
+        if let (Some(&sc), Some(&dc)) = (src_comm, dst_comm) {
+            if sc != dc {
+                *inter_community_edges.entry((sc, dc)).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let edges: Vec<CommunityGraphEdge> = inter_community_edges
+        .into_iter()
+        .map(|((source_id, target_id), weight)| CommunityGraphEdge {
+            source_id,
+            target_id,
+            weight,
+        })
+        .collect();
+
+    let response = CommunityGraphResponse { nodes, edges };
+    let value = serde_json::to_value(&response)
+        .map_err(|e| ApiError::from(CodeilusError::Internal(e.to_string())))?;
+    state.cache.json.insert(cache_key, value.clone());
+
+    Ok(Json(value))
+}
+
 /// GET /api/v1/graph — Paginated graph (nodes + edges)
 ///
 /// Query parameters:
@@ -80,11 +199,19 @@ pub struct ProcessStepResponse {
 async fn get_graph(
     State(state): State<AppState>,
     Query(query): Query<GraphQuery>,
-) -> Result<Json<GraphResponse>, ApiError> {
-    let conn = state.db.connection();
-
+) -> Result<Json<serde_json::Value>, ApiError> {
     let limit = query.limit.unwrap_or(DEFAULT_NODE_LIMIT).min(MAX_NODE_LIMIT);
     let offset = query.offset.unwrap_or(0);
+
+    let cache_key = format!(
+        "graph:c={:?}:l={}:o={}",
+        query.community_id, limit, offset
+    );
+    if let Some(cached) = state.cache.json.get(&cache_key) {
+        return Ok(Json(cached));
+    }
+
+    let conn = state.db.connection();
 
     // Load symbols as graph nodes, with optional community filter and pagination
     let nodes = if let Some(cid) = query.community_id {
@@ -161,7 +288,10 @@ async fn get_graph(
         }
     }
 
-    Ok(Json(GraphResponse { nodes, edges }))
+    let response = serde_json::to_value(GraphResponse { nodes, edges })
+        .map_err(|e| ApiError::from(CodeilusError::Internal(e.to_string())))?;
+    state.cache.json.insert(cache_key, response.clone());
+    Ok(Json(response))
 }
 
 /// GET /api/v1/communities — List all communities
@@ -272,6 +402,7 @@ async fn list_processes(
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/graph", get(get_graph))
+        .route("/graph/communities", get(get_community_graph))
         .route("/communities", get(list_communities))
         .route("/processes", get(list_processes))
 }

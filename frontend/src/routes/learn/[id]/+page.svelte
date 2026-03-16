@@ -8,11 +8,12 @@
     fetchQuiz,
     submitQuizAnswer,
     markSectionComplete,
+    skipChapter,
   } from '$lib/api';
   import type { Chapter, ChapterSection, Progress, QuizQuestion, QuizAnswerResult } from '$lib/types';
   import {
     BookOpen, ArrowLeft, ArrowRight, Check, CheckCircle, CircleDot,
-    Code2, GitBranch, HelpCircle, Loader2, Trophy, Zap, X, Eye,
+    Code2, GitBranch, HelpCircle, Loader2, Trophy, Zap, X, Eye, SkipForward,
   } from 'lucide-svelte';
   import Markdown from '$lib/Markdown.svelte';
 
@@ -132,6 +133,16 @@
     showQuizModal = false;
   }
 
+  let skipping = $state(false);
+
+  async function handleSkipChapter() {
+    skipping = true;
+    await skipChapter(chapterId);
+    // Reload progress to reflect skipped sections
+    progress = await fetchProgress();
+    skipping = false;
+  }
+
   $effect(() => {
     const id = chapterId;
     loading = true;
@@ -186,16 +197,28 @@
             </div>
           </div>
         </div>
-        {#if chapter.community_id !== null}
-          <a
-            href="/explore/graph"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border"
-            style="background: rgba(99,102,241,0.1); color: #818cf8; border-color: rgba(99,102,241,0.2)"
-          >
-            <GitBranch size={14} />
-            View in Graph
-          </a>
-        {/if}
+        <div class="flex items-center gap-2">
+          {#if chapterProgress < 100}
+            <button
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-amber-500/20 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
+              onclick={handleSkipChapter}
+              disabled={skipping}
+            >
+              <SkipForward size={14} />
+              {skipping ? 'Skipping...' : 'Skip Chapter'}
+            </button>
+          {/if}
+          {#if chapter.community_id !== null}
+            <a
+              href="/explore/graph"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border"
+              style="background: rgba(99,102,241,0.1); color: #818cf8; border-color: rgba(99,102,241,0.2)"
+            >
+              <GitBranch size={14} />
+              View in Graph
+            </a>
+          {/if}
+        </div>
       </div>
 
       {#if chapter.description}

@@ -1,8 +1,10 @@
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use codeilus_core::ids::FileId;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMetricsRow {
@@ -16,12 +18,12 @@ pub struct FileMetricsRow {
 }
 
 pub struct FileMetricsRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl FileMetricsRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     pub fn insert(
@@ -33,7 +35,7 @@ impl FileMetricsRepo {
         contributors: i64,
         heatmap_score: f64,
     ) -> CodeilusResult<i64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO file_metrics (file_id, sloc, methods, fan_in, fan_out, complexity, churn, contributors) VALUES (?1, ?2, 0, 0, 0, ?3, ?4, ?5)",
             params![file_id.0, sloc, complexity, churn, contributors],
@@ -51,7 +53,7 @@ impl FileMetricsRepo {
         &self,
         metrics: &[(FileId, i64, f64, i64, i64, f64)],
     ) -> CodeilusResult<Vec<i64>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -74,7 +76,7 @@ impl FileMetricsRepo {
     }
 
     pub fn get_by_file(&self, file_id: FileId) -> CodeilusResult<Option<FileMetricsRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let result = conn.query_row(
             "SELECT rowid, file_id, sloc, complexity, churn, contributors FROM file_metrics WHERE file_id = ?1",
             params![file_id.0],
@@ -98,7 +100,7 @@ impl FileMetricsRepo {
     }
 
     pub fn list(&self) -> CodeilusResult<Vec<FileMetricsRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT rowid, file_id, sloc, complexity, churn, contributors FROM file_metrics")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -123,7 +125,7 @@ impl FileMetricsRepo {
     }
 
     pub fn list_hotspots(&self, limit: usize) -> CodeilusResult<Vec<FileMetricsRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT rowid, file_id, sloc, complexity, churn, contributors FROM file_metrics ORDER BY complexity DESC LIMIT ?1",
@@ -150,7 +152,7 @@ impl FileMetricsRepo {
     }
 
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM file_metrics", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())

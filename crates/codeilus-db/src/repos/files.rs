@@ -8,6 +8,7 @@ pub struct NewFile {
     pub language: Language,
     pub sloc: Option<i64>,
     pub last_modified: Option<DateTime<Utc>>,
+    pub content_hash: Option<String>,
 }
 
 pub struct FileRepo;
@@ -19,7 +20,7 @@ impl FileRepo {
         files: &[NewFile],
     ) -> Result<Vec<FileId>, CodeilusError> {
         let mut stmt = tx
-            .prepare("INSERT INTO files (path, language, sloc, last_modified) VALUES (?1, ?2, ?3, ?4)")
+            .prepare("INSERT INTO files (path, language, sloc, last_modified, content_hash) VALUES (?1, ?2, ?3, ?4, ?5)")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         let mut ids = Vec::with_capacity(files.len());
         for file in files {
@@ -28,6 +29,7 @@ impl FileRepo {
                 file.language.to_string(),
                 file.sloc,
                 file.last_modified.map(|dt| dt.to_rfc3339()),
+                file.content_hash,
             ])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
             let id = tx.last_insert_rowid();

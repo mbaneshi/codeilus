@@ -2,6 +2,7 @@ import type {
   FileRow,
   SymbolRow,
   GraphResponse,
+  CommunityGraphResponse,
   Community,
   ProcessFlow,
   NarrativeResponse,
@@ -62,6 +63,10 @@ export async function searchSymbols(query: string): Promise<SymbolRow[]> {
 
 export async function fetchGraph(): Promise<GraphResponse> {
   return get(`${BASE}/graph`, { nodes: [], edges: [] });
+}
+
+export async function fetchCommunityGraph(): Promise<CommunityGraphResponse> {
+  return get(`${BASE}/graph/communities`, { nodes: [], edges: [] });
 }
 
 export async function fetchCommunities(): Promise<Community[]> {
@@ -131,6 +136,14 @@ export async function markSectionComplete(chapterId: number, sectionId: number):
   } catch {
     return false;
   }
+}
+
+export async function skipChapter(id: number): Promise<void> {
+  await fetch(`${BASE}/chapters/${id}/skip`, { method: 'POST' });
+}
+
+export async function resetProgress(): Promise<void> {
+  await fetch(`${BASE}/progress`, { method: 'DELETE' });
 }
 
 export async function fetchLearnerStats(): Promise<import('$lib/types').LearnerStats> {

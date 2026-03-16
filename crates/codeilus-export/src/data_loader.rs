@@ -4,6 +4,7 @@ use crate::types::{
 use codeilus_core::error::CodeilusResult;
 use codeilus_db::DbPool;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Assign a color to a language for badge rendering.
 fn language_color(lang: &str) -> &'static str {
@@ -26,8 +27,8 @@ fn language_color(lang: &str) -> &'static str {
 }
 
 /// Load all data needed for export from the database.
-pub fn load_export_data(repo_name: &str, db: &DbPool) -> CodeilusResult<ExportData> {
-    let conn_arc = db.conn_arc();
+pub fn load_export_data(repo_name: &str, db: &Arc<DbPool>) -> CodeilusResult<ExportData> {
+    let conn_arc = Arc::clone(db);
 
     // Load files
     let file_repo = codeilus_db::FileRepo::new(conn_arc.clone());

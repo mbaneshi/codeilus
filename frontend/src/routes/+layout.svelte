@@ -2,6 +2,7 @@
   import '../app.css';
   import { searchSymbols } from '$lib/api';
   import type { SymbolRow } from '$lib/types';
+  import { Breadcrumbs, CommandPalette, SystemStatus } from '$lib/components';
   import { BookOpen, Compass, MessageCircle, Settings, Search, Layers, Home } from 'lucide-svelte';
   import { page } from '$app/stores';
 
@@ -105,7 +106,8 @@
         <Settings size={18} />
         <span>Settings</span>
       </a>
-      <div class="mt-3 px-3 py-2 text-[11px] text-[var(--c-text-muted)]">
+      <SystemStatus />
+      <div class="px-3 py-2 text-[11px] text-[var(--c-text-muted)]">
         Codeilus v0.1.0
       </div>
     </div>
@@ -113,9 +115,14 @@
 
   <!-- Main content -->
   <main class="flex-1 overflow-auto bg-[var(--surface-0)]">
-    {@render children()}
+    <div class="p-6">
+      <Breadcrumbs />
+      {@render children()}
+    </div>
   </main>
 </div>
+
+<CommandPalette />
 
 <style>
   @reference "tailwindcss";

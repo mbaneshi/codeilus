@@ -5,6 +5,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Serialize;
 
+use std::sync::Arc;
+
 use codeilus_core::ids::ChapterId;
 use codeilus_db::{ChapterRepo, NarrativeRepo, QuizRepo};
 
@@ -35,9 +37,14 @@ pub struct SectionResponse {
 /// GET /api/v1/chapters — List all chapters with sections and narratives
 async fn list_chapters(
     State(state): State<AppState>,
-) -> Result<Json<Vec<ChapterResponse>>, ApiError> {
-    let chapter_repo = ChapterRepo::new(state.db.conn_arc());
-    let narrative_repo = NarrativeRepo::new(state.db.conn_arc());
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let cache_key = "chapters:all".to_string();
+    if let Some(cached) = state.cache.json.get(&cache_key) {
+        return Ok(Json(cached));
+    }
+
+    let chapter_repo = ChapterRepo::new(Arc::clone(&state.db));
+    let narrative_repo = NarrativeRepo::new(Arc::clone(&state.db));
 
     let chapters = chapter_repo.list_ordered()?;
     let mut result = Vec::with_capacity(chapters.len());
@@ -74,7 +81,10 @@ async fn list_chapters(
         });
     }
 
-    Ok(Json(result))
+    let response = serde_json::to_value(&result)
+        .map_err(|e| ApiError::from(codeilus_core::error::CodeilusError::Internal(e.to_string())))?;
+    state.cache.json.insert(cache_key, response.clone());
+    Ok(Json(response))
 }
 
 /// GET /api/v1/chapters/:id — Get single chapter with full detail
@@ -82,8 +92,8 @@ async fn get_chapter(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<ChapterResponse>, ApiError> {
-    let chapter_repo = ChapterRepo::new(state.db.conn_arc());
-    let narrative_repo = NarrativeRepo::new(state.db.conn_arc());
+    let chapter_repo = ChapterRepo::new(Arc::clone(&state.db));
+    let narrative_repo = NarrativeRepo::new(Arc::clone(&state.db));
 
     let ch = chapter_repo.get(ChapterId(id))?;
     let sections = chapter_repo.list_sections(ch.id)?;
@@ -131,7 +141,7 @@ async fn get_chapter_quiz(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<Vec<QuizQuestionResponse>>, ApiError> {
-    let quiz_repo = QuizRepo::new(state.db.conn_arc());
+    let quiz_repo = QuizRepo::new(Arc::clone(&state.db));
     let questions = quiz_repo.list_by_chapter(ChapterId(id))?;
 
     Ok(Json(
@@ -166,8 +176,7 @@ async fn submit_quiz_answer(
     Path(question_id): Path<i64>,
     Json(body): Json<QuizAnswerRequest>,
 ) -> Result<Json<QuizAnswerResponse>, ApiError> {
-    let conn = state.db.conn_arc();
-    let conn = conn.lock().expect("db mutex poisoned");
+    let conn = state.db.connection();
     let result: Result<(String, i64, String, String), _> = conn.query_row(
         "SELECT COALESCE(options, '[]'), COALESCE(correct_index, 0), COALESCE(explanation, ''), kind FROM quiz_questions WHERE id = ?1",
         rusqlite::params![question_id],

@@ -1,8 +1,10 @@
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use codeilus_core::ids::FileId;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRow {
@@ -14,12 +16,12 @@ pub struct FileRow {
 }
 
 pub struct FileRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl FileRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     /// Insert a single file. Returns the new FileId.
@@ -29,7 +31,7 @@ impl FileRepo {
         language: Option<&str>,
         sloc: i64,
     ) -> CodeilusResult<FileId> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "INSERT INTO files (path, language, sloc) VALUES (?1, ?2, ?3)",
             params![path, language, sloc],
@@ -43,7 +45,7 @@ impl FileRepo {
         &self,
         files: &[(String, Option<String>, i64)],
     ) -> CodeilusResult<Vec<FileId>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -65,7 +67,7 @@ impl FileRepo {
 
     /// Get a file by ID.
     pub fn get(&self, id: FileId) -> CodeilusResult<FileRow> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.query_row(
             "SELECT id, path, language, COALESCE(sloc, 0), last_modified FROM files WHERE id = ?1",
             params![id.0],
@@ -89,7 +91,7 @@ impl FileRepo {
 
     /// Get a file by path.
     pub fn get_by_path(&self, path: &str) -> CodeilusResult<Option<FileRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT id, path, language, COALESCE(sloc, 0), last_modified FROM files WHERE path = ?1")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -114,7 +116,7 @@ impl FileRepo {
 
     /// List all files. Optional language filter.
     pub fn list(&self, language: Option<&str>) -> CodeilusResult<Vec<FileRow>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut result = Vec::new();
         match language {
             Some(lang) => {
@@ -163,16 +165,32 @@ impl FileRepo {
 
     /// Count total files.
     pub fn count(&self) -> CodeilusResult<usize> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(count as usize)
     }
 
+    /// List all existing files as (path, last_modified) pairs for incremental parsing.
+    pub fn list_existing(&self) -> CodeilusResult<Vec<(String, Option<String>)>> {
+        let conn = self.db.connection();
+        let mut stmt = conn
+            .prepare("SELECT path, last_modified FROM files")
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
+        }
+        Ok(result)
+    }
+
     /// Delete all files (for re-analysis).
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM files", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         Ok(())

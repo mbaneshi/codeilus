@@ -2,9 +2,8 @@
 
 use codeilus_core::ids::{ChapterId, SymbolId};
 use codeilus_core::CodeilusResult;
-use codeilus_db::{ChapterRepo, ProgressRepo};
-use rusqlite::Connection;
-use std::sync::{Arc, Mutex};
+use codeilus_db::{ChapterRepo, DbPool, ProgressRepo};
+use std::sync::Arc;
 use tracing::debug;
 
 use crate::types::{Badge, LearnerStats, ProgressUpdate};
@@ -22,10 +21,10 @@ pub struct ProgressTracker {
 }
 
 impl ProgressTracker {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
+    pub fn new(db: Arc<DbPool>) -> Self {
         Self {
-            progress_repo: ProgressRepo::new(Arc::clone(&conn)),
-            chapter_repo: ChapterRepo::new(conn),
+            progress_repo: ProgressRepo::new(Arc::clone(&db)),
+            chapter_repo: ChapterRepo::new(db),
         }
     }
 
@@ -240,18 +239,18 @@ mod tests {
     use super::*;
     use codeilus_db::{DbPool, Migrator};
 
-    fn setup_db() -> Arc<Mutex<Connection>> {
+    fn setup_db() -> Arc<DbPool> {
         let pool = DbPool::in_memory().unwrap();
         {
             let conn = pool.connection();
             let migrator = Migrator::new(&conn);
             migrator.apply_pending().unwrap();
         }
-        pool.conn_arc()
+        Arc::new(pool)
     }
 
-    fn setup_chapter_with_sections(conn: &Arc<Mutex<Connection>>, order: i64) -> ChapterId {
-        let repo = ChapterRepo::new(Arc::clone(conn));
+    fn setup_chapter_with_sections(db: &Arc<DbPool>, order: i64) -> ChapterId {
+        let repo = ChapterRepo::new(Arc::clone(db));
         let id = repo
             .insert(order, &format!("Chapter {}", order), "desc", None, "beginner")
             .unwrap();
@@ -264,18 +263,18 @@ mod tests {
 
     #[test]
     fn progress_section_xp() {
-        let conn = setup_db();
-        let ch_id = setup_chapter_with_sections(&conn, 0);
-        let tracker = ProgressTracker::new(conn);
+        let db = setup_db();
+        let ch_id = setup_chapter_with_sections(&db, 0);
+        let tracker = ProgressTracker::new(db);
         let update = tracker.complete_section(ch_id, "overview").unwrap();
         assert_eq!(update.xp_earned, 10);
     }
 
     #[test]
     fn progress_chapter_bonus() {
-        let conn = setup_db();
-        let ch_id = setup_chapter_with_sections(&conn, 0);
-        let tracker = ProgressTracker::new(conn);
+        let db = setup_db();
+        let ch_id = setup_chapter_with_sections(&db, 0);
+        let tracker = ProgressTracker::new(db);
 
         // Complete all 6 sections
         for kind in crate::types::SectionKind::all() {
@@ -291,27 +290,27 @@ mod tests {
 
     #[test]
     fn progress_quiz_xp() {
-        let conn = setup_db();
-        let ch_id = setup_chapter_with_sections(&conn, 0);
-        let tracker = ProgressTracker::new(conn);
+        let db = setup_db();
+        let ch_id = setup_chapter_with_sections(&db, 0);
+        let tracker = ProgressTracker::new(db);
         let update = tracker.record_quiz(ch_id, 1.0, true).unwrap();
         assert_eq!(update.xp_earned, 25);
     }
 
     #[test]
     fn progress_explore_xp() {
-        let conn = setup_db();
-        let _ch_id = setup_chapter_with_sections(&conn, 0);
-        let tracker = ProgressTracker::new(conn);
+        let db = setup_db();
+        let _ch_id = setup_chapter_with_sections(&db, 0);
+        let tracker = ProgressTracker::new(db);
         let update = tracker.record_explore(SymbolId(1)).unwrap();
         assert_eq!(update.xp_earned, 5);
     }
 
     #[test]
     fn badge_first_steps() {
-        let conn = setup_db();
-        let ch0 = setup_chapter_with_sections(&conn, 0);
-        let tracker = ProgressTracker::new(conn);
+        let db = setup_db();
+        let ch0 = setup_chapter_with_sections(&db, 0);
+        let tracker = ProgressTracker::new(db);
 
         // Complete all sections of chapter 0
         for kind in crate::types::SectionKind::all() {
@@ -327,9 +326,9 @@ mod tests {
 
     #[test]
     fn badge_chapter_champion() {
-        let conn = setup_db();
-        let ch = setup_chapter_with_sections(&conn, 1); // non-zero chapter
-        let tracker = ProgressTracker::new(conn);
+        let db = setup_db();
+        let ch = setup_chapter_with_sections(&db, 1); // non-zero chapter
+        let tracker = ProgressTracker::new(db);
 
         for kind in crate::types::SectionKind::all() {
             tracker.complete_section(ch, kind.as_str()).unwrap();
@@ -344,13 +343,13 @@ mod tests {
 
     #[test]
     fn badge_quiz_master() {
-        let conn = setup_db();
+        let db = setup_db();
         // Create 5 chapters with quiz sections
         let mut chapter_ids = Vec::new();
         for i in 0..5 {
-            chapter_ids.push(setup_chapter_with_sections(&conn, i));
+            chapter_ids.push(setup_chapter_with_sections(&db, i));
         }
-        let tracker = ProgressTracker::new(conn);
+        let tracker = ProgressTracker::new(db);
 
         // Pass 5 quizzes
         for &ch_id in &chapter_ids {
@@ -366,9 +365,9 @@ mod tests {
 
     #[test]
     fn badge_not_duplicated() {
-        let conn = setup_db();
-        let ch = setup_chapter_with_sections(&conn, 1);
-        let tracker = ProgressTracker::new(conn);
+        let db = setup_db();
+        let ch = setup_chapter_with_sections(&db, 1);
+        let tracker = ProgressTracker::new(db);
 
         // Complete chapter twice (second time is a no-op for badges)
         for kind in crate::types::SectionKind::all() {

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { fetchChapters, fetchNarrative, fetchProgress, fetchLearnerStats } from '$lib/api';
+  import { fetchChapters, fetchNarrative, fetchProgress, fetchLearnerStats, resetProgress } from '$lib/api';
   import type { Chapter, NarrativeResponse, Progress, LearnerStats, Badge } from '$lib/types';
-  import { BookOpen, ChevronDown, ChevronRight, GraduationCap, FileText, Flame, Zap, Trophy, Award } from 'lucide-svelte';
+  import { BookOpen, ChevronDown, ChevronRight, GraduationCap, FileText, Flame, Zap, Trophy, Award, RotateCcw } from 'lucide-svelte';
   import Markdown from '$lib/Markdown.svelte';
 
   let loading = $state(true);
@@ -44,6 +44,17 @@
 
   function toggleChapter(id: number) {
     expandedId = expandedId === id ? null : id;
+  }
+
+  let resetting = $state(false);
+
+  async function handleResetProgress() {
+    if (!confirm('Reset all progress? This will clear XP, badges, and section completions.')) return;
+    resetting = true;
+    await resetProgress();
+    progress = [];
+    stats = { total_xp: 0, streak_days: 0, last_active: '', chapters_completed: 0, badges: [] };
+    resetting = false;
   }
 
   let overallProgress = $derived(
@@ -143,6 +154,14 @@
           <div class="h-full rounded-full bg-[var(--c-accent)] transition-all duration-500" style="width: {overallProgress}%"></div>
         </div>
       </div>
+      <button
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-50 shrink-0"
+        onclick={handleResetProgress}
+        disabled={resetting}
+      >
+        <RotateCcw size={14} />
+        {resetting ? 'Resetting...' : 'Reset Progress'}
+      </button>
     </div>
 
     <!-- Overview narrative (if available) -->

@@ -3,6 +3,7 @@
   import type { FileRow, Community, NarrativeResponse, Chapter } from '$lib/types';
   import { BookOpen, Compass, MessageCircle, ArrowRight, Zap, GitBranch, BarChart3, FileText, Map, Users } from 'lucide-svelte';
   import Markdown from '$lib/Markdown.svelte';
+  import { OnboardingBanner } from '$lib/components';
 
   let health = $state<string>('checking...');
   let files = $state<FileRow[]>([]);
@@ -289,12 +290,7 @@
     </a>
   </div>
 
-  {#if totalFiles === 0 && loaded}
-    <div class="p-5 bg-[var(--surface-1)] border border-[var(--c-border)] rounded-xl text-center">
-      <p class="text-[var(--c-text-secondary)] text-sm mb-1">No codebase analyzed yet</p>
-      <p class="text-[var(--c-text-muted)] text-sm">Run <code class="text-[var(--c-accent)] font-mono text-xs bg-[var(--c-accent)]/10 px-1.5 py-0.5 rounded">codeilus analyze ./path</code> to get started</p>
-    </div>
-  {/if}
+  <OnboardingBanner show={totalFiles === 0 && loaded} />
 
   <!-- Server status -->
   <div class="flex items-center gap-2 mt-6 text-xs text-[var(--c-text-muted)]">

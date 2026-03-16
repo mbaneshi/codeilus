@@ -1,5 +1,10 @@
+export { default as Breadcrumbs } from './Breadcrumbs.svelte';
 export { default as Card } from './Card.svelte';
+export { default as CommandPalette } from './CommandPalette.svelte';
 export { default as EmptyState } from './EmptyState.svelte';
 export { default as ErrorBanner } from './ErrorBanner.svelte';
+export { default as HelpTooltip } from './HelpTooltip.svelte';
 export { default as LoadingSpinner } from './LoadingSpinner.svelte';
+export { default as OnboardingBanner } from './OnboardingBanner.svelte';
 export { default as ProgressBar } from './ProgressBar.svelte';
+export { default as SystemStatus } from './SystemStatus.svelte';

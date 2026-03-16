@@ -6,6 +6,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
+use std::sync::Arc;
+
 use codeilus_core::ids::FileId;
 use codeilus_db::{FileRepo, FileRow, SymbolRepo, SymbolRow};
 
@@ -22,7 +24,7 @@ async fn list_files(
     State(state): State<AppState>,
     Query(query): Query<FileListQuery>,
 ) -> Result<Json<Vec<FileRow>>, ApiError> {
-    let repo = FileRepo::new(state.db.conn_arc());
+    let repo = FileRepo::new(Arc::clone(&state.db));
     let files = repo.list(query.language.as_deref())?;
     Ok(Json(files))
 }
@@ -32,7 +34,7 @@ async fn get_file(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<FileRow>, ApiError> {
-    let repo = FileRepo::new(state.db.conn_arc());
+    let repo = FileRepo::new(Arc::clone(&state.db));
     let file = repo.get(FileId(id))?;
     Ok(Json(file))
 }
@@ -42,7 +44,7 @@ async fn get_file_symbols(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<Vec<SymbolRow>>, ApiError> {
-    let repo = SymbolRepo::new(state.db.conn_arc());
+    let repo = SymbolRepo::new(Arc::clone(&state.db));
     let symbols = repo.list_by_file(FileId(id))?;
     Ok(Json(symbols))
 }
@@ -73,7 +75,7 @@ async fn get_file_source(
     Path(id): Path<i64>,
     Query(query): Query<SourceQuery>,
 ) -> Result<Json<SourceResponse>, ApiError> {
-    let repo = FileRepo::new(state.db.conn_arc());
+    let repo = FileRepo::new(Arc::clone(&state.db));
     let file = repo.get(FileId(id))?;
 
     let repo_root = state.repo_root.as_ref().ok_or_else(|| ApiError {

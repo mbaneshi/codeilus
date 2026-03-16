@@ -22,6 +22,7 @@ codeilus-learn = { path = "../codeilus-learn" }
 codeilus-harvest = { path = "../codeilus-harvest" }
 codeilus-export = { path = "../codeilus-export" }
 codeilus-mcp = { path = "../codeilus-mcp" }
+chrono = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }

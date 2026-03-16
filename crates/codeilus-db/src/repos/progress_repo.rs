@@ -1,9 +1,11 @@
 //! Repository for progress tracking, learner stats, and badge storage.
 
 use codeilus_core::error::{CodeilusError, CodeilusResult};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::pool::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressRow {
@@ -21,17 +23,17 @@ pub struct LearnerStatsRow {
 }
 
 pub struct ProgressRepo {
-    conn: Arc<Mutex<Connection>>,
+    db: Arc<DbPool>,
 }
 
 impl ProgressRepo {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(db: Arc<DbPool>) -> Self {
+        Self { db }
     }
 
     /// Record a section completion. Returns the progress row id.
     pub fn record_section(&self, chapter_id: i64, section_id: &str) -> CodeilusResult<i64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         // Look up the chapter_sections.id by chapter_id and content_type
         let cs_id: i64 = conn
             .query_row(
@@ -71,7 +73,7 @@ impl ProgressRepo {
 
     /// Check if a section is completed.
     pub fn is_section_complete(&self, chapter_id: i64, section_id: &str) -> CodeilusResult<bool> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         // Look up chapter_sections.id
         let cs_id: Result<i64, _> = conn.query_row(
             "SELECT id FROM chapter_sections WHERE chapter_id = ?1 AND content_type = ?2",
@@ -96,7 +98,7 @@ impl ProgressRepo {
 
     /// Get chapter progress as fraction (0.0 to 1.0).
     pub fn get_chapter_progress(&self, chapter_id: i64) -> CodeilusResult<f64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let total: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM chapter_sections WHERE chapter_id = ?1",
@@ -119,7 +121,7 @@ impl ProgressRepo {
 
     /// Get overall progress across all chapters.
     pub fn get_overall_progress(&self) -> CodeilusResult<f64> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let total: i64 = conn
             .query_row("SELECT COUNT(*) FROM chapter_sections", [], |row| {
                 row.get(0)
@@ -140,7 +142,7 @@ impl ProgressRepo {
 
     /// Get or create the learner stats row.
     pub fn get_or_create_stats(&self) -> CodeilusResult<LearnerStatsRow> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let result = conn.query_row(
             "SELECT total_xp, streak_days, last_active FROM learner_stats WHERE id = 1",
             [],
@@ -172,7 +174,7 @@ impl ProgressRepo {
 
     /// Update learner stats.
     pub fn update_stats(&self, stats: &LearnerStatsRow) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute(
             "UPDATE learner_stats SET total_xp = ?1, streak_days = ?2, last_active = ?3 WHERE id = 1",
             params![stats.total_xp, stats.streak_days, stats.last_active],
@@ -183,7 +185,7 @@ impl ProgressRepo {
 
     /// List completed section IDs (content_types) for a chapter.
     pub fn list_completed_sections(&self, chapter_id: i64) -> CodeilusResult<Vec<String>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare(
                 "SELECT cs.content_type FROM progress p \
@@ -203,7 +205,7 @@ impl ProgressRepo {
 
     /// Count how many quizzes have been passed (chapters with "quiz" section completed).
     pub fn count_quizzes_passed(&self) -> CodeilusResult<usize> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(DISTINCT p.chapter_id) FROM progress p \
@@ -218,7 +220,7 @@ impl ProgressRepo {
 
     /// Insert a badge if it doesn't already exist.
     pub fn insert_badge(&self, name: &str, description: &str) -> CodeilusResult<bool> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let result = conn.execute(
             "INSERT OR IGNORE INTO badges (name, description, earned_at) VALUES (?1, ?2, datetime('now'))",
             params![name, description],
@@ -231,7 +233,7 @@ impl ProgressRepo {
 
     /// List all earned badge names.
     pub fn list_badges(&self) -> CodeilusResult<Vec<String>> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let mut stmt = conn
             .prepare("SELECT name FROM badges WHERE earned_at IS NOT NULL")
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
@@ -247,7 +249,7 @@ impl ProgressRepo {
 
     /// Count completed chapters (all sections done).
     pub fn count_completed_chapters(&self) -> CodeilusResult<usize> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         // A chapter is complete if all its sections have corresponding progress entries
         let mut stmt = conn
             .prepare(
@@ -276,7 +278,7 @@ impl ProgressRepo {
 
     /// Count total completed sections across all chapters.
     pub fn count_completed_sections(&self) -> CodeilusResult<usize> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM progress WHERE completed = 1",
@@ -294,7 +296,7 @@ impl ProgressRepo {
     }
 
     pub fn delete_all(&self) -> CodeilusResult<()> {
-        let conn = self.conn.lock().expect("db mutex poisoned");
+        let conn = self.db.connection();
         conn.execute("DELETE FROM progress", [])
             .map_err(|e| CodeilusError::Database(Box::new(e)))?;
         conn.execute("DELETE FROM badges", [])
