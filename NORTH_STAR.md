@@ -697,26 +697,26 @@ Key design decisions:
 ## 10. Acceptance Criteria (End-to-End)
 
 ### Must Have (MVP)
-- [ ] `codeilus ./any-repo` → full analysis pipeline completes
-- [ ] Browser opens → guided learning path with chapters
-- [ ] Interactive graph explorer with colored communities
-- [ ] Metrics dashboard with complexity heatmap
-- [ ] Auto-generated architecture diagram (Mermaid)
-- [ ] Pre-generated narrative content (overview, architecture, reading order)
-- [ ] Streaming Q&A via Claude Code
-- [ ] Progress tracking (% complete per chapter)
-- [ ] XP + at least 4 badges
+- [x] `codeilus ./any-repo` → full analysis pipeline completes
+- [x] Browser opens → guided learning path with chapters
+- [x] Interactive graph explorer with colored communities
+- [x] Metrics dashboard with complexity heatmap
+- [x] Auto-generated architecture diagram (Mermaid)
+- [x] Pre-generated narrative content (overview, architecture, reading order)
+- [x] Streaming Q&A via Claude Code
+- [x] Progress tracking (% complete per chapter)
+- [x] XP + at least 4 badges
 - [ ] Zero warnings (`cargo clippy`), all tests pass
 
 ### Should Have
-- [ ] `codeilus harvest --trending` → scrape, clone, analyze daily
-- [ ] `codeilus export` → self-contained HTML <500KB
+- [x] `codeilus harvest --trending` → scrape, clone, analyze daily
+- [x] `codeilus export` → self-contained HTML <500KB
 - [ ] `codeilus deploy --cloudflare` → published to CDN
 - [ ] Daily GitHub Actions automation
-- [ ] MCP server with 8 tools
-- [ ] Incremental analysis (re-parse only changed files)
+- [x] MCP server with 8 tools
+- [x] Incremental analysis (re-parse only changed files)
 - [ ] Function-level flowchart diagrams
-- [ ] Quiz system with adaptive difficulty
+- [x] Quiz system with adaptive difficulty
 
 ### Nice to Have
 - [ ] Multi-language narrative translation (per-prompt strategy from PocketFlow, not post-translate)
@@ -806,16 +806,26 @@ The LLM doesn't guess abstractions — we tell it based on real data, and ask it
 
 ## 13. Current State
 
-**Sprint 0: COMPLETE**
+**Sprints 0–8: COMPLETE**
 
 ```
-16 crates compile ✓    10 tests pass ✓    0 clippy warnings ✓
+16 crates compile ✓    50+ REST API endpoints ✓    SSE streaming Q&A ✓
 
-codeilus-core:  EventBus, 18 events, 12 errors, 5 ID types, 4 type enums
-codeilus-db:    DbPool (WAL), Migrator, BatchWriter, 20-table schema
-codeilus-api:   Axum + CORS + WS + rust-embed SPA fallback
-codeilus-app:   clap CLI: analyze, serve, harvest, export, deploy, mcp
-+ 12 stub crates ready for Sprint 1+
+codeilus-core:     EventBus, 18 events, 12 errors, 5 ID types, 4 type enums
+codeilus-db:       DbPool (WAL + r2d2 connection pool), Migrator, BatchWriter, Moka cache, 20-table schema
+codeilus-parse:    Tree-sitter parsing for 12 languages, incremental parsing, pipeline checkpoints
+codeilus-graph:    Knowledge graph with Louvain communities, pattern detection
+codeilus-metrics:  File metrics (SLOC, complexity, fan-in/out)
+codeilus-diagram:  Mermaid architecture diagrams
+codeilus-llm:      LLM narratives (8 types via Claude Code CLI)
+codeilus-narrate:  Pre-generated narrative content for all 8 types
+codeilus-learn:    Curriculum generation with quizzes, gamification (XP, badges, streaks)
+codeilus-api:      Axum + CORS + WS + rust-embed SPA fallback, 50+ endpoints, SSE streaming
+codeilus-harvest:  GitHub trending harvest
+codeilus-export:   Static HTML export
+codeilus-mcp:      MCP server with 16 tools
+codeilus-app:      clap CLI: analyze, serve, harvest, export, deploy, mcp
+frontend:          SvelteKit 5 (graph explorer, learning path, Ask AI)
 ```
 
-**Next:** Sprint 1 (Parsing Engine) or Frontend Skeleton.
+**Next:** Cloudflare deploy pipeline, GitHub Actions daily automation, cargo clippy zero-warning sweep.
