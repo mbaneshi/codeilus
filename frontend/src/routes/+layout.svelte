@@ -114,11 +114,22 @@
   </nav>
 
   <!-- Main content -->
-  <main class="flex-1 overflow-auto bg-[var(--surface-0)]">
-    <div class="p-6">
-      <Breadcrumbs />
-      {@render children()}
-    </div>
+  <main class="flex-1 bg-[var(--surface-0)] {currentPath.startsWith('/explore/graph') ? 'overflow-hidden' : 'overflow-auto'}">
+    {#if currentPath.startsWith('/explore/graph')}
+      <div class="h-full flex flex-col">
+        <div class="px-6 pt-4 pb-2 shrink-0">
+          <Breadcrumbs />
+        </div>
+        <div class="flex-1 min-h-0">
+          {@render children()}
+        </div>
+      </div>
+    {:else}
+      <div class="p-6">
+        <Breadcrumbs />
+        {@render children()}
+      </div>
+    {/if}
   </main>
 </div>
 

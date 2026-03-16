@@ -105,8 +105,9 @@ async fn run_analyze(
     let pipeline = PipelineRepo::new(Arc::clone(db));
     let repo_path = path.to_string_lossy().to_string();
     if force {
-        info!("Force flag set, resetting pipeline checkpoints");
+        info!("Force flag set, resetting pipeline checkpoints and clearing data");
         pipeline.reset(&repo_path)?;
+        db.clear_analysis_data()?;
     }
 
     // 1. PARSE (incremental if possible)

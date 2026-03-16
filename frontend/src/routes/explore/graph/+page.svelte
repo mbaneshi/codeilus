@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import {
     fetchGraph, fetchCommunityGraph, fetchCommunities, fetchChapters, fetchFiles, fetchProgress,
     fetchNarrativeByTarget, fetchAnnotations, createAnnotation, updateAnnotation,
@@ -648,6 +649,7 @@
     initialized = true;
 
     import('3d-force-graph').then(({ default: ForceGraph3D }) => {
+      console.log('[graph] 3d-force-graph loaded, container:', containerEl?.clientWidth, 'x', containerEl?.clientHeight);
       const nodeMap = new Map(allNodes.map(n => [n.id, n]));
 
       // Start with community-level view if community data is available
@@ -693,7 +695,13 @@
         zoomLevel = 'community-detail';
       }
 
+      // Ensure container has dimensions before initializing
+      const w = containerEl!.clientWidth || window.innerWidth - 264;
+      const h = containerEl!.clientHeight || window.innerHeight;
+
       const fg = ForceGraph3D()(containerEl!)
+        .width(w)
+        .height(h)
         .backgroundColor('#0a0a1a')
         .graphData(gData)
         .nodeLabel((node: any) => {
@@ -902,6 +910,8 @@
       });
       observer.observe(containerEl!);
       return () => observer.disconnect();
+    }).catch(err => {
+      console.error('[graph] Failed to load 3d-force-graph:', err);
     });
   });
 
