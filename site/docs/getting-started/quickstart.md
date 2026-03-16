@@ -5,7 +5,7 @@
 Point Codeilus at any repository:
 
 ```bash
-codeilus ./path/to/repo
+./target/release/codeilus analyze /path/to/repo
 ```
 
 This runs the full pipeline (parse, graph, metrics, narrate, learn) and starts the server:
@@ -32,10 +32,13 @@ If you prefer to separate analysis from serving:
 
 ```bash
 # Analyze first
-codeilus analyze ./path/to/repo
+./target/release/codeilus analyze /path/to/repo
 
 # Then serve
-codeilus serve --port 4174
+./target/release/codeilus serve
+
+# Open browser
+open http://localhost:4174
 ```
 
 ## What You'll See
@@ -60,7 +63,7 @@ Streaming Q&A powered by Claude Code. Ask questions about the codebase and get a
 Everything works without Claude Code &mdash; you just get placeholder text instead of AI-generated narratives:
 
 ```bash
-CODEILUS_SKIP_LLM=1 codeilus ./repo
+CODEILUS_SKIP_LLM=1 ./target/release/codeilus analyze /path/to/repo
 ```
 
 Analysis, graphs, metrics, diagrams, curriculum structure, and quizzes all function normally. Only the narrative text and Q&A require Claude Code.

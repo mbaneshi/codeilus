@@ -1,5 +1,8 @@
 # Codeilus
 
+!!! warning "Status: Pre-release (v0.1.0-alpha)"
+    All core features functional. Some narrative types may fall back to placeholders if LLM times out.
+
 **Turn any codebase into an interactive learning experience.**
 
 <div class="grid cards" markdown>
@@ -9,9 +12,10 @@
     ---
 
     ```bash
-    git clone https://github.com/codeilus/codeilus.git
-    cd codeilus && cargo install --path crates/codeilus-app
-    codeilus ./any-repo
+    git clone https://github.com/encadeiateia-maker/codeilus.git
+    cd codeilus && cargo build --release
+    ./target/release/codeilus analyze ./any-repo
+    ./target/release/codeilus serve
     # Open http://localhost:4174
     ```
 
@@ -63,9 +67,11 @@
 ### Interactive Local Server
 
 ```bash
-codeilus ./any-repo
+./target/release/codeilus analyze ./any-repo
 # Analyzing... 342 files, 2847 symbols, 12 communities
 # Narrating... 8 sections generated
+
+./target/release/codeilus serve
 # Open http://localhost:4174
 ```
 

@@ -34,8 +34,16 @@ cargo test -p codeilus-parse   # test single crate
 - Tests use in-memory SQLite (`DbPool::in_memory()`)
 
 ## Current State
-Sprint 0 complete: 16 crates compile, 10 tests pass, zero clippy warnings.
-Next: Wave 1 (parse + db repos + frontend skeleton) — see docs/AGENT_PROMPTS.md.
+Waves 1-4 complete. All 16 crates functional with 268 tests passing, zero clippy warnings.
+- Parse: Tree-sitter for 12 languages, incremental parsing
+- Graph: Call graph, Louvain communities, 3-level zoom visualization
+- Metrics: SLOC, complexity, fan-in/out, modularity
+- Narrate: 8 narrative types via Claude Code CLI
+- Learn: Curriculum, quizzes, XP/badges/streaks
+- API: 50+ REST endpoints, SSE streaming Q&A
+- Frontend: SvelteKit 5 with graph explorer, learning path, Ask AI
+- Infrastructure: r2d2 pool, moka cache, pipeline checkpoints, structured logging
+Next: Wave 5-6 polish, release pipeline, documentation refresh.
 
 ## Parallel Agent Waves
 - **Wave 1** (3 agents): codeilus-parse, codeilus-db repos, frontend skeleton

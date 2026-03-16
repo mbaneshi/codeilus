@@ -8,15 +8,17 @@
 ## Install from Source
 
 ```bash
-git clone https://github.com/codeilus/codeilus.git
+git clone https://github.com/encadeiateia-maker/codeilus.git
 cd codeilus
-cargo install --path crates/codeilus-app
+cargo build --release
 ```
+
+The binary will be at `./target/release/codeilus`.
 
 ## Verify Installation
 
 ```bash
-codeilus --help
+./target/release/codeilus --help
 ```
 
 You should see:

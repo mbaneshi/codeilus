@@ -8,6 +8,7 @@ All endpoints are under `/api/v1`.
 |---|---|---|
 | GET | `/health` | Health check (`{ "status": "ok" }`) |
 | GET | `/llm/status` | LLM provider status (`{ "available": bool, "provider": string }`) |
+| GET | `/ws` | WebSocket endpoint for real-time events |
 
 ## Files
 
@@ -31,6 +32,7 @@ All endpoints are under `/api/v1`.
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/graph` | Paginated graph. Optional `?community_id=X&limit=500&offset=0` |
+| GET | `/graph/communities` | Get community-level graph view |
 | GET | `/communities` | List communities with members |
 | GET | `/processes` | List execution flows with steps |
 
@@ -38,6 +40,7 @@ All endpoints are under `/api/v1`.
 
 | Method | Endpoint | Description |
 |---|---|---|
+| GET | `/narratives` | List all narratives |
 | GET | `/narratives/:kind` | Get narrative by kind (overview, architecture, etc.) |
 | GET | `/narratives/:kind/:target_id` | Get narrative for a specific target |
 
@@ -48,9 +51,11 @@ All endpoints are under `/api/v1`.
 | GET | `/chapters` | List all chapters with sections |
 | GET | `/chapters/:id` | Get chapter detail with narrative |
 | GET | `/chapters/:id/quiz` | Get quiz questions for a chapter |
-| POST | `/quiz/:id/answer` | Submit quiz answer (`{ "answer": "..." }`) |
+| POST | `/quiz/:question_id/answer` | Submit quiz answer (`{ "answer": "..." }`) |
 | GET | `/progress` | Get section completion progress |
-| POST | `/chapters/:cid/sections/:sid/complete` | Mark section as complete |
+| DELETE | `/progress` | Reset all progress |
+| POST | `/chapters/:chapter_id/sections/:section_id/complete` | Mark section as complete |
+| POST | `/chapters/:chapter_id/skip` | Skip a chapter |
 | GET | `/learner/stats` | Get XP, streak, badges, chapters completed |
 
 ## Annotations
