@@ -18,7 +18,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
-      upload_url: ${{ steps.release.outputs.upload_url }}
+      version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
     steps:
       - uses: google-github-actions/release-please-action@v4
         id: release
@@ -65,10 +65,17 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: codeilus-linux-x86_64
+            artifact: codeilus-x86_64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: codeilus-aarch64-unknown-linux-gnu
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            artifact: codeilus-x86_64-apple-darwin
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact: codeilus-macos-aarch64
+            artifact: codeilus-aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +84,14 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -105,9 +120,129 @@ jobs:
           cd target/${{ matrix.target }}/release
           tar czf ../../../${{ matrix.artifact }}.tar.gz codeilus
           cd ../../..
+          shasum -a 256 ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: ${{ matrix.artifact }}.tar.gz
+          files: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: [release-please, build-binaries]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for release assets
+        run: sleep 10
+
+      - name: Download checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          mkdir -p checksums
+          for target in x86_64-apple-darwin aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            gh release download "$TAG" \
+              --repo mbaneshi/codeilus \
+              --pattern "codeilus-${target}.tar.gz.sha256" \
+              --dir checksums/ || true
+          done
+          cat checksums/*.sha256
+
+      - name: Checkout homebrew-codeilus
+        uses: actions/checkout@v4
+        with:
+          repository: mbaneshi/homebrew-codeilus
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update formula
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          SHA_MACOS_ARM=$(awk '{print $1}' checksums/codeilus-aarch64-apple-darwin.tar.gz.sha256)
+          SHA_MACOS_INTEL=$(awk '{print $1}' checksums/codeilus-x86_64-apple-darwin.tar.gz.sha256)
+          SHA_LINUX_AMD=$(awk '{print $1}' checksums/codeilus-x86_64-unknown-linux-gnu.tar.gz.sha256)
+          SHA_LINUX_ARM=$(awk '{print $1}' checksums/codeilus-aarch64-unknown-linux-gnu.tar.gz.sha256)
+
+          cat > homebrew-tap/Formula/codeilus.rb << FORMULA
+          class Codeilus < Formula
+            desc "Turn any codebase into an interactive learning experience"
+            homepage "https://github.com/mbaneshi/codeilus"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/mbaneshi/codeilus/releases/download/${TAG}/codeilus-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_MACOS_ARM}"
+              else
+                url "https://github.com/mbaneshi/codeilus/releases/download/${TAG}/codeilus-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_MACOS_INTEL}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/mbaneshi/codeilus/releases/download/${TAG}/codeilus-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${SHA_LINUX_ARM}"
+              else
+                url "https://github.com/mbaneshi/codeilus/releases/download/${TAG}/codeilus-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${SHA_LINUX_AMD}"
+              end
+            end
+
+            def install
+              bin.install "codeilus"
+            end
+
+            test do
+              assert_match "codeilus #{version}", shell_output("#{bin}/codeilus --version")
+            end
+          end
+          FORMULA
+
+      - name: Commit and push formula
+        working-directory: homebrew-tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/codeilus.rb
+          git commit -m "Update codeilus to ${VERSION}"
+          git push
+
+  publish-crate:
+    name: Publish to crates.io
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node & build frontend
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build frontend for embedding
+        run: |
+          npm install -g pnpm
+          cd frontend && pnpm install --frozen-lockfile && pnpm build
+
+      - name: Publish crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          for crate in codeilus-core codeilus-db codeilus-parse codeilus-graph codeilus-metrics codeilus-analyze codeilus-diagram codeilus-search codeilus-llm codeilus-learn codeilus-narrate codeilus-harvest codeilus-export codeilus-api codeilus-mcp codeilus-app; do
+            echo "Publishing $crate..."
+            cargo publish -p $crate --allow-dirty || true
+            sleep 30
+          done

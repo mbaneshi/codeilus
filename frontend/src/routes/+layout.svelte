@@ -3,7 +3,8 @@
   import { searchSymbols } from '$lib/api';
   import type { SymbolRow } from '$lib/types';
   import { Breadcrumbs, CommandPalette, SystemStatus } from '$lib/components';
-  import { BookOpen, Compass, MessageCircle, Settings, Search, Layers, Home } from 'lucide-svelte';
+  import { BookOpen, Compass, MessageCircle, Settings, Search, Layers, Home, Sun, Moon } from 'lucide-svelte';
+  import { themeStore } from '$lib/stores/theme.svelte';
   import { page } from '$app/stores';
 
   let { children } = $props();
@@ -102,6 +103,15 @@
 
     <!-- Footer -->
     <div class="px-3 pb-3">
+      <button onclick={() => themeStore.toggle()} class="nav-item w-full" title="Toggle theme">
+        {#if themeStore.current === 'dark'}
+          <Sun size={18} />
+          <span>Light mode</span>
+        {:else}
+          <Moon size={18} />
+          <span>Dark mode</span>
+        {/if}
+      </button>
       <a href="/settings" class="nav-item" class:active={isActive('/settings')}>
         <Settings size={18} />
         <span>Settings</span>

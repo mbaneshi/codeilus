@@ -2,6 +2,13 @@
 name = "codeilus-app"
 version = "0.1.0"
 edition = "2021"
+description = "Turn any codebase into an interactive learning experience"
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords = ["codebase", "learning", "analysis", "graph", "education"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "codeilus"

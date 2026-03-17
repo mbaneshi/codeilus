@@ -12,7 +12,7 @@
     ---
 
     ```bash
-    git clone https://github.com/encadeiateia-maker/codeilus.git
+    git clone https://github.com/mbaneshi/codeilus.git
     cd codeilus && cargo build --release
     ./target/release/codeilus analyze ./any-repo
     ./target/release/codeilus serve

@@ -20,6 +20,12 @@ members = [
     "xtask",
 ]
 
+[workspace.package]
+authors = ["mbaneshi <baneshi@gmail.com>"]
+repository = "https://github.com/mbaneshi/codeilus"
+license = "MIT"
+homepage = "https://github.com/mbaneshi/codeilus"
+
 [workspace.dependencies]
 tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros", "signal", "process", "io-util"] }
 serde = { version = "1", features = ["derive"] }

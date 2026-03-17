@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tracing::info;
 
 #[derive(Parser)]
-#[command(name = "codeilus", about = "Turn any codebase into an interactive learning experience")]
+#[command(name = "codeilus", version, about = "Turn any codebase into an interactive learning experience")]
 struct Cli {
     /// Path to analyze (shorthand for `analyze <path> && serve`)
     #[arg(value_name = "PATH")]

@@ -2,40 +2,60 @@
 
 ## Prerequisites
 
-- **Rust toolchain** (1.75+): [rustup.rs](https://rustup.rs)
 - **Claude Code CLI** (optional, for AI features): `npm install -g @anthropic-ai/claude-code`
 
-## Install from Source
+## Install via Homebrew (macOS & Linux)
 
 ```bash
-git clone https://github.com/encadeiateia-maker/codeilus.git
-cd codeilus
-cargo build --release
+brew tap mbaneshi/codeilus
+brew install codeilus
 ```
 
-The binary will be at `./target/release/codeilus`.
+Upgrade:
+```bash
+brew upgrade codeilus
+```
+
+## Install via Cargo
+
+```bash
+cargo install --git https://github.com/mbaneshi/codeilus.git codeilus-app
+```
+
+## Download Pre-built Binary
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/mbaneshi/codeilus/releases):
+
+| Platform | Download |
+|---|---|
+| macOS (Apple Silicon) | `codeilus-aarch64-apple-darwin.tar.gz` |
+| macOS (Intel) | `codeilus-x86_64-apple-darwin.tar.gz` |
+| Linux (x86_64) | `codeilus-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux (ARM64) | `codeilus-aarch64-unknown-linux-gnu.tar.gz` |
+
+```bash
+# Example: macOS Apple Silicon
+curl -LO https://github.com/mbaneshi/codeilus/releases/latest/download/codeilus-aarch64-apple-darwin.tar.gz
+tar xzf codeilus-aarch64-apple-darwin.tar.gz
+sudo mv codeilus /usr/local/bin/
+```
+
+## Build from Source
+
+```bash
+git clone https://github.com/mbaneshi/codeilus.git
+cd codeilus
+cargo build --release
+# Binary at ./target/release/codeilus
+```
 
 ## Verify Installation
 
 ```bash
-./target/release/codeilus --help
-```
+codeilus --version
+# codeilus 0.1.0
 
-You should see:
-
-```
-Turn any codebase into an interactive learning experience
-
-Usage: codeilus [PATH] [COMMAND]
-
-Commands:
-  analyze   Analyze a codebase
-  serve     Start the interactive server
-  harvest   Scrape GitHub trending repos
-  export    Export analyzed repo as static HTML
-  deploy    Deploy static output to CDN
-  mcp       Start MCP stdio server
-  help      Print help
+codeilus --help
 ```
 
 ## Claude Code Setup (Optional)

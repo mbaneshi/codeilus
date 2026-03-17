@@ -1,8 +1,8 @@
 site_name: Codeilus
-site_url: https://encadeiateia-maker.github.io/codeilus/
+site_url: https://mbaneshi.github.io/codeilus/
 site_description: Turn any codebase into an interactive learning experience
-repo_url: https://github.com/encadeiateia-maker/codeilus
-repo_name: encadeiateia-maker/codeilus
+repo_url: https://github.com/mbaneshi/codeilus
+repo_name: mbaneshi/codeilus
 
 theme:
   name: material
@@ -86,4 +86,4 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/codeilus/codeilus
+      link: https://github.com/mbaneshi/codeilus
