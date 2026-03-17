@@ -13,6 +13,7 @@
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   let currentPath = $derived($page.url.pathname);
+  let isFullScreen = $derived(currentPath.startsWith('/explore/graph') || currentPath.startsWith('/explore/schematic'));
 
   function onSearchInput() {
     if (debounceTimer) clearTimeout(debounceTimer);
@@ -124,12 +125,14 @@
   </nav>
 
   <!-- Main content -->
-  <main class="flex-1 bg-[var(--surface-0)] {currentPath.startsWith('/explore/graph') ? 'overflow-hidden' : 'overflow-auto'}">
-    {#if currentPath.startsWith('/explore/graph')}
+  <main class="flex-1 bg-[var(--surface-0)] {isFullScreen ? 'overflow-hidden' : 'overflow-auto'}">
+    {#if isFullScreen}
       <div class="h-full flex flex-col">
-        <div class="px-6 pt-4 pb-2 shrink-0">
-          <Breadcrumbs />
-        </div>
+        {#if currentPath.startsWith('/explore/graph')}
+          <div class="px-6 pt-4 pb-2 shrink-0">
+            <Breadcrumbs />
+          </div>
+        {/if}
         <div class="flex-1 min-h-0">
           {@render children()}
         </div>
