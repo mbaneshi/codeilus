@@ -52,12 +52,12 @@
   let symbolFilter = $state('');
   let searchQuery = $state('');
 
-  // Initialize shiki highlighter
+  // Initialize shiki highlighter — starts empty, languages loaded on demand per file
   async function getHighlighter(): Promise<Highlighter> {
     if (highlighter) return highlighter;
     highlighter = await createHighlighter({
       themes: ['github-dark'],
-      langs: Object.values(LANG_MAP).filter((v, i, a) => a.indexOf(v) === i),
+      langs: [],
     });
     return highlighter;
   }

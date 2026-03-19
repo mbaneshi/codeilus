@@ -13,7 +13,7 @@ pub use repos::{
     CommunityRow, EdgeRepo, EdgeRow, FileMetricsRepo, FileMetricsRow, FileRepo, FileRow,
     HarvestRepoRepo, HarvestRepoRow, LearnerStatsRow, NarrativeRepo, NarrativeRow, PatternRepo,
     PatternRow, ProcessRepo, ProcessRow, ProcessStepRow, ProgressRepo, ProgressRow,
-    PipelineRepo, QuizQuestionRow, QuizRepo, SymbolRepo, SymbolRow,
+    PipelineRepo, QuizQuestionRow, QuizRepo, SchematicRepo, SymbolRepo, SymbolRow,
 };
 
 use std::collections::HashMap;

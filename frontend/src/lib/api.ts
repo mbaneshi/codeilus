@@ -12,6 +12,10 @@ import type {
 
 const BASE = '/api/v1';
 
+// ── In-memory cache with TTL ──
+const _cache = new Map<string, { data: unknown; expires: number }>();
+const DEFAULT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 async function get<T>(url: string, fallback: T): Promise<T> {
   try {
     const res = await fetch(url);
@@ -31,13 +35,24 @@ async function get<T>(url: string, fallback: T): Promise<T> {
   }
 }
 
+/** Cached GET — returns from in-memory cache if fresh, otherwise fetches. */
+async function cachedGet<T>(url: string, fallback: T, ttl = DEFAULT_CACHE_TTL): Promise<T> {
+  const entry = _cache.get(url);
+  if (entry && entry.expires > Date.now()) {
+    return entry.data as T;
+  }
+  const data = await get<T>(url, fallback);
+  _cache.set(url, { data, expires: Date.now() + ttl });
+  return data;
+}
+
 export async function fetchHealth(): Promise<{ status: string }> {
   return get(`${BASE}/health`, { status: 'disconnected' });
 }
 
 export async function fetchFiles(language?: string): Promise<FileRow[]> {
   const params = language ? `?language=${encodeURIComponent(language)}` : '';
-  return get(`${BASE}/files${params}`, []);
+  return cachedGet(`${BASE}/files${params}`, []);
 }
 
 export async function fetchFile(id: number): Promise<FileRow | null> {
@@ -50,7 +65,7 @@ export async function fetchFileSymbols(fileId: number): Promise<SymbolRow[]> {
 
 export async function fetchSymbols(kind?: string): Promise<SymbolRow[]> {
   const params = kind ? `?kind=${encodeURIComponent(kind)}` : '';
-  return get(`${BASE}/symbols${params}`, []);
+  return cachedGet(`${BASE}/symbols${params}`, []);
 }
 
 export async function fetchSymbol(id: number): Promise<SymbolRow | null> {
@@ -66,11 +81,11 @@ export async function fetchGraph(): Promise<GraphResponse> {
 }
 
 export async function fetchCommunityGraph(): Promise<CommunityGraphResponse> {
-  return get(`${BASE}/graph/communities`, { nodes: [], edges: [] });
+  return cachedGet(`${BASE}/graph/communities`, { nodes: [], edges: [] });
 }
 
 export async function fetchCommunities(): Promise<Community[]> {
-  return get(`${BASE}/communities`, []);
+  return cachedGet(`${BASE}/communities`, []);
 }
 
 export async function fetchProcesses(): Promise<ProcessFlow[]> {
@@ -78,7 +93,7 @@ export async function fetchProcesses(): Promise<ProcessFlow[]> {
 }
 
 export async function fetchNarrative(kind: string): Promise<NarrativeResponse | null> {
-  return get(`${BASE}/narratives/${kind}`, null);
+  return cachedGet(`${BASE}/narratives/${kind}`, null);
 }
 
 export async function fetchNarrativeByTarget(kind: string, targetId: number): Promise<NarrativeResponse | null> {
@@ -86,7 +101,7 @@ export async function fetchNarrativeByTarget(kind: string, targetId: number): Pr
 }
 
 export async function fetchChapters(): Promise<Chapter[]> {
-  return get(`${BASE}/chapters`, []);
+  return cachedGet(`${BASE}/chapters`, []);
 }
 
 export async function fetchChapter(id: number): Promise<Chapter | null> {

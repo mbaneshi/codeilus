@@ -13,6 +13,7 @@ const MIGRATION_006: &str = include_str!("../../../migrations/0006_seed_badges.s
 const MIGRATION_007: &str = include_str!("../../../migrations/0007_narrative_placeholder.sql");
 const MIGRATION_008: &str = include_str!("../../../migrations/0008_content_hash.sql");
 const MIGRATION_009: &str = include_str!("../../../migrations/0009_pipeline_runs.sql");
+const MIGRATION_010: &str = include_str!("../../../migrations/0010_add_indexes.sql");
 
 pub struct Migrator<'a> {
     conn: &'a Connection,
@@ -170,6 +171,15 @@ impl<'a> Migrator<'a> {
                 .map_err(|e| CodeilusError::Database(Box::new(e)))?;
             applied += 1;
             info!("migration 0009 applied, now at version 9");
+        }
+
+        if current < 10 {
+            info!("applying migration 0010_add_indexes.sql");
+            self.conn
+                .execute_batch(MIGRATION_010)
+                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+            applied += 1;
+            info!("migration 0010 applied, now at version 10");
         }
 
         if applied == 0 {

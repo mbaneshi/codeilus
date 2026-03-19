@@ -7,10 +7,8 @@ use serde::Deserialize;
 
 use std::sync::Arc;
 
-use codeilus_core::error::CodeilusError;
-use codeilus_core::ids::{FileId, SymbolId};
+use codeilus_core::ids::SymbolId;
 use codeilus_db::{SymbolRepo, SymbolRow};
-use rusqlite::params;
 
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -19,64 +17,29 @@ use crate::state::AppState;
 pub struct SymbolSearchQuery {
     pub q: Option<String>,
     pub kind: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
-/// GET /api/v1/symbols — List all symbols, optional ?kind= filter
+/// GET /api/v1/symbols — List symbols with pagination, optional ?kind= filter
 async fn list_symbols(
     State(state): State<AppState>,
     Query(query): Query<SymbolSearchQuery>,
-) -> Result<Json<Vec<SymbolRow>>, ApiError> {
-    let conn = state.db.connection();
-    let mut result = Vec::new();
-    match query.kind {
-        Some(kind) => {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT id, file_id, name, kind, start_line, end_line, signature FROM symbols WHERE kind = ?1",
-                )
-                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-            let rows = stmt
-                .query_map(params![kind], |row| {
-                    Ok(SymbolRow {
-                        id: SymbolId(row.get(0)?),
-                        file_id: FileId(row.get(1)?),
-                        name: row.get(2)?,
-                        kind: row.get(3)?,
-                        start_line: row.get(4)?,
-                        end_line: row.get(5)?,
-                        signature: row.get(6)?,
-                    })
-                })
-                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-            for row in rows {
-                result.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
-            }
-        }
-        None => {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT id, file_id, name, kind, start_line, end_line, signature FROM symbols",
-                )
-                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-            let rows = stmt
-                .query_map([], |row| {
-                    Ok(SymbolRow {
-                        id: SymbolId(row.get(0)?),
-                        file_id: FileId(row.get(1)?),
-                        name: row.get(2)?,
-                        kind: row.get(3)?,
-                        start_line: row.get(4)?,
-                        end_line: row.get(5)?,
-                        signature: row.get(6)?,
-                    })
-                })
-                .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-            for row in rows {
-                result.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
-            }
-        }
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let cache_key = format!("symbols:k={:?}:l={}:o={}", query.kind, limit, offset);
+
+    if let Some(cached) = state.cache.json.get(&cache_key) {
+        return Ok(Json(cached));
     }
-    Ok(Json(result))
+
+    let repo = SymbolRepo::new(Arc::clone(&state.db));
+    let results = repo.list_paginated(query.kind.as_deref(), limit, offset)?;
+    let value = serde_json::to_value(&results)
+        .map_err(|e| ApiError::from(codeilus_core::error::CodeilusError::Internal(e.to_string())))?;
+    state.cache.json.insert(cache_key, value.clone());
+    Ok(Json(value))
 }
 
 /// GET /api/v1/symbols/:id — Get a single symbol by ID

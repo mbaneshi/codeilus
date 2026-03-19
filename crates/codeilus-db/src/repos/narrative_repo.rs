@@ -159,6 +159,34 @@ impl NarrativeRepo {
         Ok(result)
     }
 
+    /// List narratives with pagination.
+    pub fn list_paginated(&self, limit: i64, offset: i64) -> CodeilusResult<Vec<NarrativeRow>> {
+        let conn = self.db.connection();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, kind, target_id, language, content, generated_at, is_placeholder FROM narratives LIMIT ?1 OFFSET ?2",
+            )
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        let rows = stmt
+            .query_map(params![limit, offset], |row| {
+                Ok(NarrativeRow {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    target_id: row.get(2)?,
+                    language: row.get(3)?,
+                    content: row.get(4)?,
+                    generated_at: row.get(5)?,
+                    is_placeholder: row.get(6)?,
+                })
+            })
+            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
+        }
+        Ok(result)
+    }
+
     /// List narratives by kind.
     pub fn list_by_kind(&self, kind: &str) -> CodeilusResult<Vec<NarrativeRow>> {
         let conn = self.db.connection();

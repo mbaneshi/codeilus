@@ -186,6 +186,66 @@ impl SymbolRepo {
         Ok(result)
     }
 
+    /// List all symbols with pagination. Optional kind filter.
+    pub fn list_paginated(
+        &self,
+        kind: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> CodeilusResult<Vec<SymbolRow>> {
+        let conn = self.db.connection();
+        let mut result = Vec::new();
+        match kind {
+            Some(k) => {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id, file_id, name, kind, start_line, end_line, signature FROM symbols WHERE kind = ?1 LIMIT ?2 OFFSET ?3",
+                    )
+                    .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+                let rows = stmt
+                    .query_map(params![k, limit, offset], |row| {
+                        Ok(SymbolRow {
+                            id: SymbolId(row.get(0)?),
+                            file_id: FileId(row.get(1)?),
+                            name: row.get(2)?,
+                            kind: row.get(3)?,
+                            start_line: row.get(4)?,
+                            end_line: row.get(5)?,
+                            signature: row.get(6)?,
+                        })
+                    })
+                    .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+                for row in rows {
+                    result.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
+                }
+            }
+            None => {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id, file_id, name, kind, start_line, end_line, signature FROM symbols LIMIT ?1 OFFSET ?2",
+                    )
+                    .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+                let rows = stmt
+                    .query_map(params![limit, offset], |row| {
+                        Ok(SymbolRow {
+                            id: SymbolId(row.get(0)?),
+                            file_id: FileId(row.get(1)?),
+                            name: row.get(2)?,
+                            kind: row.get(3)?,
+                            start_line: row.get(4)?,
+                            end_line: row.get(5)?,
+                            signature: row.get(6)?,
+                        })
+                    })
+                    .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+                for row in rows {
+                    result.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
+                }
+            }
+        }
+        Ok(result)
+    }
+
     /// Count total symbols.
     pub fn count(&self) -> CodeilusResult<usize> {
         let conn = self.db.connection();

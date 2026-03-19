@@ -17,16 +17,29 @@ use crate::state::AppState;
 #[derive(Deserialize)]
 pub struct FileListQuery {
     pub language: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
-/// GET /api/v1/files — List all files, optional ?language= filter
+/// GET /api/v1/files — List files with pagination, optional ?language= filter
 async fn list_files(
     State(state): State<AppState>,
     Query(query): Query<FileListQuery>,
-) -> Result<Json<Vec<FileRow>>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let cache_key = format!("files:l={:?}:l={}:o={}", query.language, limit, offset);
+
+    if let Some(cached) = state.cache.json.get(&cache_key) {
+        return Ok(Json(cached));
+    }
+
     let repo = FileRepo::new(Arc::clone(&state.db));
-    let files = repo.list(query.language.as_deref())?;
-    Ok(Json(files))
+    let files = repo.list_paginated(query.language.as_deref(), limit, offset)?;
+    let value = serde_json::to_value(&files)
+        .map_err(|e| ApiError::from(codeilus_core::error::CodeilusError::Internal(e.to_string())))?;
+    state.cache.json.insert(cache_key, value.clone());
+    Ok(Json(value))
 }
 
 /// GET /api/v1/files/:id — Get a single file by ID
