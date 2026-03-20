@@ -34,33 +34,22 @@
   let activeTab = $state<'overview' | 'source' | 'relations' | 'learn' | 'notes'>('overview');
   let sourceData = $state<SourceResponse | null>(null);
   let sourceLoading = $state(false);
+  let sourceNodeId = $state('');
   let noteText = $state('');
-  let lastNodeId = '';
-
-  function loadSource() {
-    if (!node.file_id || sourceLoading) return;
-    sourceLoading = true;
-    fetchFileSource(node.file_id, 1, 100).then(data => {
-      sourceData = data;
-      sourceLoading = false;
-    });
-  }
 
   function switchTab(tab: typeof activeTab) {
     activeTab = tab;
-    if (tab === 'source' && !sourceData && node.file_id) loadSource();
-  }
-
-  // Reset on node change (checked manually since $effect may be stripped)
-  function checkReset() {
-    if (node.id !== lastNodeId) {
-      lastNodeId = node.id;
+    // Load source on demand
+    if (tab === 'source' && node.file_id && sourceNodeId !== node.id) {
+      sourceLoading = true;
+      sourceNodeId = node.id;
       sourceData = null;
-      activeTab = 'overview';
-      noteText = '';
+      fetchFileSource(node.file_id, 1, 120).then(data => {
+        sourceData = data;
+        sourceLoading = false;
+      });
     }
   }
-  checkReset();
 
   function submitNote() {
     if (noteText.trim() && onannotationcreate) {

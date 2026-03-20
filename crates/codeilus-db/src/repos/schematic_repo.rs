@@ -366,10 +366,21 @@ impl SchematicRepo {
             }
         }
 
-        // Optionally load symbols
+        // Optionally load symbols (filtered by community if set)
         if include_symbols {
             #[allow(clippy::type_complexity)]
-            let syms: Vec<(i64, i64, String, String, Option<i32>, Option<i32>, Option<String>)> = {
+            let syms: Vec<(i64, i64, String, String, Option<i32>, Option<i32>, Option<String>)> = if let Some(cid) = community_filter {
+                let mut stmt = conn.prepare(
+                    "SELECT s.id, s.file_id, s.name, s.kind, s.start_line, s.end_line, s.signature
+                     FROM symbols s
+                     JOIN community_members cm ON cm.symbol_id = s.id
+                     WHERE cm.community_id = ?1
+                     ORDER BY s.file_id, s.start_line"
+                ).map_err(db_err)?;
+                let rows = stmt.query_map(params![cid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))
+                    .map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                rows
+            } else {
                 let mut stmt = conn.prepare(
                     "SELECT id, file_id, name, kind, start_line, end_line, signature FROM symbols ORDER BY file_id, start_line"
                 ).map_err(db_err)?;
@@ -394,6 +405,7 @@ impl SchematicRepo {
                     chapter_id: None, chapter_title: None, difficulty: None, progress: None,
                 });
             }
+
         }
 
         // Enrich directory nodes with dominant community using ALL files
@@ -426,19 +438,39 @@ impl SchematicRepo {
             }
         }
 
-        // Optionally load edges
+        // Optionally load edges (filtered by community if set)
         let edges = if include_edges {
-            let mut stmt = conn.prepare("SELECT id, source_id, target_id, kind, confidence FROM edges").map_err(db_err)?;
-            let rows = stmt.query_map([], |r| {
-                Ok(SchematicEdge {
-                    id: format!("e:{}", r.get::<_, i64>(0)?),
-                    source: format!("sym:{}", r.get::<_, i64>(1)?),
-                    target: format!("sym:{}", r.get::<_, i64>(2)?),
-                    edge_type: r.get(3)?,
-                    confidence: r.get(4).ok(),
-                })
-            }).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
-            rows
+            if let Some(cid) = community_filter {
+                // Only edges where both endpoints are in this community
+                let mut stmt = conn.prepare(
+                    "SELECT e.id, e.source_id, e.target_id, e.kind, e.confidence
+                     FROM edges e
+                     JOIN community_members cm1 ON cm1.symbol_id = e.source_id AND cm1.community_id = ?1
+                     JOIN community_members cm2 ON cm2.symbol_id = e.target_id AND cm2.community_id = ?1"
+                ).map_err(db_err)?;
+                let rows = stmt.query_map(params![cid], |r| {
+                    Ok(SchematicEdge {
+                        id: format!("e:{}", r.get::<_, i64>(0)?),
+                        source: format!("sym:{}", r.get::<_, i64>(1)?),
+                        target: format!("sym:{}", r.get::<_, i64>(2)?),
+                        edge_type: r.get(3)?,
+                        confidence: r.get(4).ok(),
+                    })
+                }).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                rows
+            } else {
+                let mut stmt = conn.prepare("SELECT id, source_id, target_id, kind, confidence FROM edges").map_err(db_err)?;
+                let rows = stmt.query_map([], |r| {
+                    Ok(SchematicEdge {
+                        id: format!("e:{}", r.get::<_, i64>(0)?),
+                        source: format!("sym:{}", r.get::<_, i64>(1)?),
+                        target: format!("sym:{}", r.get::<_, i64>(2)?),
+                        edge_type: r.get(3)?,
+                        confidence: r.get(4).ok(),
+                    })
+                }).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                rows
+            }
         } else {
             Vec::new()
         };
