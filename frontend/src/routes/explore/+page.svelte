@@ -38,20 +38,12 @@
       <p class="text-sm text-[var(--c-text-secondary)] leading-relaxed">SLOC, language distribution, and largest files</p>
     </a>
 
-    <a href="/explore/schematic/tree" class="explore-card group">
+    <a href="/explore/schematic" class="explore-card group">
       <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center mb-3 group-hover:bg-amber-500/20 transition-colors">
-        <GitBranch size={20} class="text-amber-400" />
+        <Workflow size={20} class="text-amber-400" />
       </div>
-      <h3 class="text-base font-semibold text-[var(--c-text-primary)] mb-1">Tree Schematic</h3>
-      <p class="text-sm text-[var(--c-text-secondary)] leading-relaxed">Interactive codebase tree with clickable files and details</p>
-    </a>
-
-    <a href="/explore/schematic/graph" class="explore-card group">
-      <div class="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center mb-3 group-hover:bg-indigo-500/20 transition-colors">
-        <Workflow size={20} class="text-indigo-400" />
-      </div>
-      <h3 class="text-base font-semibold text-[var(--c-text-primary)] mb-1">Symbol Schematic</h3>
-      <p class="text-sm text-[var(--c-text-secondary)] leading-relaxed">Layered symbol graph with community drill-down and learning content</p>
+      <h3 class="text-base font-semibold text-[var(--c-text-primary)] mb-1">Schematic Explorer</h3>
+      <p class="text-sm text-[var(--c-text-secondary)] leading-relaxed">Unified tree + graph with lazy loading, communities, and learning links</p>
     </a>
 
     <a href="/explore/diagrams" class="explore-card group">

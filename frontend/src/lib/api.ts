@@ -8,6 +8,8 @@ import type {
   NarrativeResponse,
   Chapter,
   SourceResponse,
+  SchematicResponse,
+  SchematicDetail,
 } from '$lib/types';
 
 const BASE = '/api/v1';
@@ -282,4 +284,25 @@ export async function askQuestion(
   } catch (e) {
     onError(`Network error: ${e}`);
   }
+}
+
+// ── Schematic API ──
+
+const EMPTY_SCHEMATIC: SchematicResponse = { nodes: [], edges: [], communities: [], meta: { total_files: 0, total_symbols: 0, total_communities: 0, depth_returned: 0 } };
+
+export async function fetchSchematic(depth = 2, communityId?: number, includeSymbols = false, includeEdges = false): Promise<SchematicResponse> {
+  const params = new URLSearchParams({ depth: String(depth), include_symbols: String(includeSymbols), include_edges: String(includeEdges) });
+  if (communityId !== undefined) params.set('community_id', String(communityId));
+  return cachedGet(`${BASE}/schematic?${params}`, EMPTY_SCHEMATIC);
+}
+
+export async function fetchSchematicExpand(nodeId: string, includeSymbols = true, includeEdges = true): Promise<SchematicResponse> {
+  const params = new URLSearchParams({ node_id: nodeId, include_symbols: String(includeSymbols), include_edges: String(includeEdges) });
+  return get(`${BASE}/schematic/expand?${params}`, EMPTY_SCHEMATIC);
+}
+
+export async function fetchSchematicDetail(nodeId: string, includeSource = true): Promise<SchematicDetail> {
+  return cachedGet(`${BASE}/schematic/detail?node_id=${encodeURIComponent(nodeId)}&include_source=${includeSource}`, {
+    node_id: nodeId, callers: [], callees: [],
+  });
 }

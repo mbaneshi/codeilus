@@ -327,7 +327,7 @@ impl SchematicRepo {
                     all_dirs.insert(dir_path.clone(), true);
                     nodes.push(SchematicNode {
                         id: dir_id.clone(), node_type: "directory".into(),
-                        label: parts[i].to_string(), parent_id: Some(parent_id.clone()),
+                        label: (*part).to_string(), parent_id: Some(parent_id.clone()),
                         has_children: true, child_count: None, symbol_count: None,
                         file_id: None, symbol_id: None, language: None, sloc: None,
                         kind: None, signature: None,
@@ -396,6 +396,36 @@ impl SchematicRepo {
             }
         }
 
+        // Enrich directory nodes with dominant community using ALL files
+        {
+            let mut dir_community_counts: HashMap<String, HashMap<i64, usize>> = HashMap::new();
+            // Use all files (not just returned nodes) to compute dir communities
+            for (fid, path, _lang, _sloc) in &files {
+                if let Some(&comm_id) = file_dominant_community.get(fid) {
+                    let clean = path.strip_prefix("./").unwrap_or(path);
+                    let parts: Vec<&str> = clean.split('/').collect();
+                    // Attribute to every ancestor directory
+                    let mut dir_path = ".".to_string();
+                    for i in 0..parts.len() - 1 {
+                        dir_path = if dir_path == "." { parts[i].to_string() } else { format!("{}/{}", dir_path, parts[i]) };
+                        let dir_id = format!("dir:{}", dir_path);
+                        *dir_community_counts.entry(dir_id).or_default().entry(comm_id).or_default() += 1;
+                    }
+                }
+            }
+            for node in &mut nodes {
+                if node.node_type == "directory" && node.community_id.is_none() {
+                    if let Some(counts) = dir_community_counts.get(&node.id) {
+                        if let Some((&best_id, _)) = counts.iter().max_by_key(|(_, c)| *c) {
+                            node.community_id = Some(best_id);
+                            node.community_label = community_map.get(&best_id).cloned();
+                            node.community_color = Some(community_color(best_id));
+                        }
+                    }
+                }
+            }
+        }
+
         // Optionally load edges
         let edges = if include_edges {
             let mut stmt = conn.prepare("SELECT id, source_id, target_id, kind, confidence FROM edges").map_err(db_err)?;
@@ -447,11 +477,15 @@ impl SchematicRepo {
             let files: Vec<(i64, String, Option<String>, i64)> = stmt.query_map(params![pattern], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
                 .map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
 
-            // Filter to direct children only
+            // Extract direct children: subdirs and files
+            let mut seen_dirs: HashMap<String, bool> = HashMap::new();
             for (fid, path, lang, sloc) in &files {
                 let clean = path.strip_prefix("./").unwrap_or(path);
                 let relative = if dir_path == "." { clean.to_string() } else {
-                    clean.strip_prefix(&format!("{}/", dir_path)).unwrap_or(clean).to_string()
+                    match clean.strip_prefix(&format!("{}/", dir_path)) {
+                        Some(r) => r.to_string(),
+                        None => continue,
+                    }
                 };
                 let parts: Vec<&str> = relative.split('/').collect();
                 if parts.len() == 1 {
@@ -466,6 +500,22 @@ impl SchematicRepo {
                         community_id: None, community_label: None, community_color: None,
                         chapter_id: None, chapter_title: None, difficulty: None, progress: None,
                     });
+                } else if parts.len() > 1 {
+                    // Subdirectory
+                    let sub_dir = parts[0];
+                    let sub_dir_path = if dir_path == "." { sub_dir.to_string() } else { format!("{}/{}", dir_path, sub_dir) };
+                    if !seen_dirs.contains_key(&sub_dir_path) {
+                        seen_dirs.insert(sub_dir_path.clone(), true);
+                        nodes.push(SchematicNode {
+                            id: format!("dir:{}", sub_dir_path), node_type: "directory".into(),
+                            label: sub_dir.to_string(), parent_id: Some(node_id.to_string()),
+                            has_children: true, child_count: None, symbol_count: None,
+                            file_id: None, symbol_id: None, language: None, sloc: None,
+                            kind: None, signature: None,
+                            community_id: None, community_label: None, community_color: None,
+                            chapter_id: None, chapter_title: None, difficulty: None, progress: None,
+                        });
+                    }
                 }
             }
         } else if let Some(file_id_str) = node_id.strip_prefix("file:") {

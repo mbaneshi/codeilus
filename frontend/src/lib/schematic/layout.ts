@@ -90,6 +90,11 @@ const NODE_H_GAP = 24;
 export function layoutLayered(input: LayeredInput): { nodes: LayoutNode[]; edges: LayoutEdge[]; width: number; height: number } {
   const { nodes: inputNodes, edges: inputEdges } = input;
 
+  // If no edges, use grid layout
+  if (inputEdges.length === 0) {
+    return layoutGrid(inputNodes);
+  }
+
   // Build adjacency
   const incoming = new Map<string, Set<string>>();
   const outgoing = new Map<string, Set<string>>();
@@ -117,7 +122,6 @@ export function layoutLayered(input: LayeredInput): { nodes: LayoutNode[]; edges
       }
     }
     if (layer.length === 0) {
-      // Cycle: just take remaining
       layer.push(...remaining);
     }
     for (const id of layer) {
@@ -155,4 +159,58 @@ export function layoutLayered(input: LayeredInput): { nodes: LayoutNode[]; edges
   }));
 
   return { nodes: layoutNodes, edges: layoutEdges, width: maxWidth + 20, height: maxY + 40 };
+}
+
+// ── Grid Layout (for nodes without edges, e.g. community overview) ──
+
+function layoutGrid(inputNodes: { id: string; label: string; data: Record<string, unknown> }[]): { nodes: LayoutNode[]; edges: LayoutEdge[]; width: number; height: number } {
+  const CARD_W = 200;
+  const CARD_H = 60;
+  const GAP_X = 24;
+  const GAP_Y = 20;
+  const COLS = Math.max(1, Math.min(5, Math.ceil(Math.sqrt(inputNodes.length))));
+
+  const layoutNodes: LayoutNode[] = [];
+  for (let i = 0; i < inputNodes.length; i++) {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    const n = inputNodes[i];
+    layoutNodes.push({
+      id: n.id,
+      label: n.label,
+      width: CARD_W,
+      height: CARD_H,
+      x: 20 + col * (CARD_W + GAP_X),
+      y: 20 + row * (CARD_H + GAP_Y),
+      data: n.data,
+    });
+  }
+
+  const maxX = Math.max(...layoutNodes.map(n => n.x + n.width), 0);
+  const maxY = Math.max(...layoutNodes.map(n => n.y + n.height), 0);
+  return { nodes: layoutNodes, edges: [], width: maxX + 20, height: maxY + 20 };
+}
+
+// ── Fit-to-view ──
+
+export function computeFitToView(
+  nodes: LayoutNode[],
+  viewportW: number,
+  viewportH: number,
+  padding = 40,
+): { tx: number; ty: number; scale: number } {
+  if (nodes.length === 0) return { tx: padding, ty: padding, scale: 1 };
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    minX = Math.min(minX, n.x);
+    minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + n.width);
+    maxY = Math.max(maxY, n.y + n.height);
+  }
+  const bboxW = maxX - minX;
+  const bboxH = maxY - minY;
+  const scale = Math.min((viewportW - padding * 2) / bboxW, (viewportH - padding * 2) / bboxH, 1.5);
+  const tx = (viewportW - bboxW * scale) / 2 - minX * scale;
+  const ty = (viewportH - bboxH * scale) / 2 - minY * scale;
+  return { tx, ty, scale };
 }
