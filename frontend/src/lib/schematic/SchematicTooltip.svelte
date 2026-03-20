@@ -52,6 +52,12 @@
       {#if node.symbol_count}
         <span>{node.symbol_count} symbols</span>
       {/if}
+      {#if node.has_children && node.type === 'directory'}
+        <span>click to expand</span>
+      {/if}
+      {#if node.type === 'file' && node.has_children}
+        <span>expandable</span>
+      {/if}
     </div>
 
     <!-- Community -->

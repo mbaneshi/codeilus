@@ -474,7 +474,7 @@
                 {#if sn?.type === 'directory'}
                   {@const isExp = expandedSet.has(node.id)}
                   <text x="8" y="23" font-size="11" fill="var(--c-text-secondary)" font-family="var(--font-sans)">
-                    {isExp ? '▼' : '▶'} {node.label}
+                    {isExp ? '▼' : '▶'} {node.label === '.' ? 'codeilus' : node.label}
                   </text>
                   {#if expandingSet.has(node.id)}
                     <text x={node.width - 20} y="23" font-size="9" fill="var(--c-accent)">...</text>

@@ -132,9 +132,11 @@
             <div>
               <h3 class="text-xs font-medium text-[var(--c-text-muted)] uppercase mb-1">Explanation</h3>
               <div class="text-sm text-[var(--c-text-secondary)] leading-relaxed">
-                <Markdown content={detail.narrative} />
+                <Markdown content={detail.narrative.replace(/^\s*\("[^"]*"\)\s*\n?/, '')} />
               </div>
             </div>
+          {:else}
+            <p class="text-xs text-[var(--c-text-muted)] italic">No AI explanation available yet. Click "Source" tab to view the code, or right-click → "Ask AI" to generate one.</p>
           {/if}
 
           {#if node.signature}
