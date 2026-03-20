@@ -29,6 +29,9 @@
   let expandingSet = $state<Set<string>>(new Set());
   let hiddenNodes = $state<Set<string>>(new Set());
 
+  // ── Legend ──
+  let showLegend = $state(false);
+
   // ── Search ──
   let searchQuery = $state('');
   let highlighted = $state<Set<string>>(new Set());
@@ -370,6 +373,7 @@
 
     <div class="ml-auto flex items-center gap-2">
       <button onclick={fitToView} class="px-2 py-0.5 rounded bg-[var(--surface-2)] hover:bg-[var(--surface-3)] text-[var(--c-text-muted)]" title="Fit to view (F)">Fit</button>
+      <button onclick={() => showLegend = !showLegend} class="px-2 py-0.5 rounded {showLegend ? 'bg-[var(--c-accent)] text-white' : 'bg-[var(--surface-2)] text-[var(--c-text-muted)]'} hover:bg-[var(--surface-3)]" title="Toggle legend">Legend</button>
       <button onclick={() => showKeyboardHelp = true} class="px-2 py-0.5 rounded bg-[var(--surface-2)] hover:bg-[var(--surface-3)] text-[var(--c-text-muted)]" title="Shortcuts (?)">?</button>
       <span class="text-[10px] text-[var(--c-text-muted)]">{meta.total_files}f &middot; {meta.total_symbols}s</span>
       <input
@@ -417,6 +421,9 @@
           onwheel={onWheel} onpointerdown={onPointerDown} onpointermove={onPointerMove} onpointerup={onPointerUp}
         >
           <defs>
+            <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.15" />
+            </filter>
             <marker id="ah" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
               <polygon points="0 0, 6 2, 0 4" fill="var(--c-text-muted)" opacity="0.4" />
             </marker>
@@ -454,10 +461,11 @@
                 onpointerleave={() => hoveredNodeId = null}
               >
                 <rect
-                  width={node.width} height={node.height} rx="6"
+                  width={node.width} height={node.height} rx="8"
                   fill="var(--surface-1)"
                   stroke={highlighted.has(node.id) ? 'var(--c-accent)' : isHovered ? 'var(--c-accent-hover)' : commColor(sn?.community_id)}
                   stroke-width={highlighted.has(node.id) || isHovered ? 2.5 : sn?.community_id ? 1.5 : 1}
+                  filter={isHovered ? 'url(#shadow)' : undefined}
                 />
                 {#if sn?.community_color}
                   <rect x="0" y="0" width="3" height={node.height} rx="1.5" fill={sn.community_color} />
@@ -497,6 +505,56 @@
           viewX={tx} viewY={ty} viewScale={scale} viewW={containerW} viewH={containerH}
           onpan={(newTx, newTy) => { tx = newTx; ty = newTy; }}
         />
+
+        <!-- Legend -->
+        {#if showLegend}
+          <div class="absolute bottom-3 left-3 z-20 bg-[var(--surface-1)] border border-[var(--c-border)] rounded-lg shadow-lg p-3 w-[200px] text-[10px]">
+            <div class="font-semibold text-[var(--c-text-primary)] text-xs mb-2">Legend</div>
+
+            <div class="mb-2">
+              <div class="text-[var(--c-text-muted)] uppercase tracking-wider mb-1">Nodes</div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-2"><span class="text-[var(--c-text-secondary)]">▶</span> <span class="text-[var(--c-text-secondary)]">Directory (click to expand)</span></div>
+                <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-[var(--c-text-muted)]"></span> <span class="text-[var(--c-text-secondary)]">File</span></div>
+                <div class="flex items-center gap-2"><span class="text-[var(--c-text-muted)]">FN</span> <span class="text-[var(--c-text-secondary)]">Symbol (function, class...)</span></div>
+                <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-[var(--c-accent)]"></span> <span class="text-[var(--c-text-secondary)]">Community</span></div>
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <div class="text-[var(--c-text-muted)] uppercase tracking-wider mb-1">Edges</div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-2"><span class="w-4 h-0.5 rounded" style="background: #6366f1"></span> <span class="text-[var(--c-text-secondary)]">Calls</span></div>
+                <div class="flex items-center gap-2"><span class="w-4 h-0.5 rounded" style="background: #14b8a6"></span> <span class="text-[var(--c-text-secondary)]">Imports</span></div>
+                <div class="flex items-center gap-2"><span class="w-4 h-0.5 rounded" style="background: #f59e0b"></span> <span class="text-[var(--c-text-secondary)]">Extends</span></div>
+                <div class="flex items-center gap-2"><span class="w-4 h-0.5 rounded" style="background: #ec4899"></span> <span class="text-[var(--c-text-secondary)]">Implements</span></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="text-[var(--c-text-muted)] uppercase tracking-wider mb-1">Colors</div>
+              <div class="text-[var(--c-text-secondary)]">Left stripe = community color</div>
+              <div class="flex flex-wrap gap-1 mt-1">
+                {#each communities.slice(0, 8) as c}
+                  <span class="w-3 h-3 rounded-sm" style="background: {c.color}" title={c.label}></span>
+                {/each}
+                {#if communities.length > 8}
+                  <span class="text-[var(--c-text-muted)]">+{communities.length - 8}</span>
+                {/if}
+              </div>
+            </div>
+
+            <div class="mt-2 pt-2 border-t border-[var(--c-border)]">
+              <div class="text-[var(--c-text-muted)] uppercase tracking-wider mb-1">Interactions</div>
+              <div class="space-y-0.5 text-[var(--c-text-secondary)]">
+                <div>Click &middot; expand / select</div>
+                <div>Double-click &middot; deep dive</div>
+                <div>Right-click &middot; actions menu</div>
+                <div>Hover &middot; highlight connections</div>
+              </div>
+            </div>
+          </div>
+        {/if}
       {/if}
     </div>
 

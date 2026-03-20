@@ -63,7 +63,7 @@
     {@const nw = Math.max(node.width * minimapScale, 2)}
     {@const nh = Math.max(node.height * minimapScale, 1.5)}
     <rect x={nx} y={ny} width={nw} height={nh} rx="0.5"
-      fill={node.data?.community_color || 'var(--c-text-muted)'}
+      fill={(node.data?.community_color as string) || 'var(--c-text-muted)'}
       opacity="0.6"
     />
   {/each}
