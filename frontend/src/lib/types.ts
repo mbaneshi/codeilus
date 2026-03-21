@@ -157,6 +157,68 @@ export interface LearnerStats {
   badges: Badge[];
 }
 
+// ── Schematic types ──
+
+export interface SchematicNode {
+  id: string;
+  type: 'directory' | 'file' | 'symbol' | 'community';
+  label: string;
+  parent_id: string | null;
+  file_id?: number;
+  symbol_id?: number;
+  language?: string;
+  sloc?: number;
+  kind?: string;
+  signature?: string;
+  community_id?: number;
+  community_label?: string;
+  community_color?: string;
+  chapter_id?: number;
+  chapter_title?: string;
+  difficulty?: string;
+  progress?: { completed: number; total: number };
+  has_children: boolean;
+  child_count?: number;
+  symbol_count?: number;
+}
+
+export interface SchematicEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  confidence?: number;
+}
+
+export interface SchematicCommunity {
+  id: number;
+  label: string;
+  color: string;
+  cohesion: number;
+  member_count: number;
+  chapter_id?: number;
+  chapter_title?: string;
+  difficulty?: string;
+  progress?: { completed: number; total: number };
+}
+
+export interface SchematicResponse {
+  nodes: SchematicNode[];
+  edges: SchematicEdge[];
+  communities: SchematicCommunity[];
+  meta: { total_files: number; total_symbols: number; total_communities: number; depth_returned: number };
+}
+
+export interface SchematicDetail {
+  node_id: string;
+  narrative?: string;
+  narrative_kind?: string;
+  source?: { path: string; language?: string; lines: { number: number; content: string }[]; total_lines: number };
+  callers: { id: string; name: string; kind: string; file_path: string }[];
+  callees: { id: string; name: string; kind: string; file_path: string }[];
+  chapter?: { id: number; title: string; difficulty: string; progress: { completed: number; total: number } };
+}
+
 export interface Annotation {
   id: number;
   target_type: 'node' | 'edge';

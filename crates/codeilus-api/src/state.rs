@@ -24,7 +24,7 @@ impl AppCache {
     pub fn new() -> Self {
         Self {
             json: Cache::builder()
-                .max_capacity(100)
+                .max_capacity(500)
                 .time_to_live(Duration::from_secs(600)) // 10 min TTL
                 .build(),
         }

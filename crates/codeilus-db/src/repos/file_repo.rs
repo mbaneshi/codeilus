@@ -163,6 +163,62 @@ impl FileRepo {
         Ok(result)
     }
 
+    /// List files with pagination. Optional language filter.
+    pub fn list_paginated(
+        &self,
+        language: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> CodeilusResult<Vec<FileRow>> {
+        let conn = self.db.connection();
+        let mut result = Vec::new();
+        match language {
+            Some(lang) => {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id, path, language, COALESCE(sloc, 0), last_modified FROM files WHERE language = ?1 LIMIT ?2 OFFSET ?3",
+                    )
+                    .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+                let rows = stmt
+                    .query_map(params![lang, limit, offset], |row| {
+                        Ok(FileRow {
+                            id: FileId(row.get(0)?),
+                            path: row.get(1)?,
+                            language: row.get(2)?,
+                            sloc: row.get(3)?,
+                            last_modified: row.get(4)?,
+                        })
+                    })
+                    .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+                for row in rows {
+                    result.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
+                }
+            }
+            None => {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id, path, language, COALESCE(sloc, 0), last_modified FROM files LIMIT ?1 OFFSET ?2",
+                    )
+                    .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+                let rows = stmt
+                    .query_map(params![limit, offset], |row| {
+                        Ok(FileRow {
+                            id: FileId(row.get(0)?),
+                            path: row.get(1)?,
+                            language: row.get(2)?,
+                            sloc: row.get(3)?,
+                            last_modified: row.get(4)?,
+                        })
+                    })
+                    .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+                for row in rows {
+                    result.push(row.map_err(|e| CodeilusError::Database(Box::new(e)))?);
+                }
+            }
+        }
+        Ok(result)
+    }
+
     /// Count total files.
     pub fn count(&self) -> CodeilusResult<usize> {
         let conn = self.db.connection();

@@ -33,3 +33,5 @@ pub mod annotation_repo;
 pub use annotation_repo::{AnnotationRepo, AnnotationRow};
 pub mod pipeline_repo;
 pub use pipeline_repo::PipelineRepo;
+pub mod schematic_repo;
+pub use schematic_repo::SchematicRepo;

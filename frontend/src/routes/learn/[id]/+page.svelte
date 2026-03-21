@@ -262,7 +262,7 @@
         <!-- Overview: narrative + section content -->
         {#if chapter.narrative}
           <div class="mb-6">
-            <Markdown content={chapter.narrative} />
+            <Markdown content={chapter.narrative.replace(/^\s*\("[^"]*"\)\s*\n?/, '')} />
           </div>
         {/if}
 

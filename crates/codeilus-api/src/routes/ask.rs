@@ -17,8 +17,6 @@ use tracing::info;
 
 use crate::state::AppState;
 
-type SymbolRow = (String, String, String, i64, i64, Option<String>);
-
 #[derive(Deserialize)]
 struct AskRequest {
     question: String,
@@ -72,24 +70,35 @@ async fn ask_stream(
         }).into_response();
     }
 
-    // Build context from selected symbols
+    // Build context from selected symbols (batch query)
     let mut context_parts = Vec::new();
     if !body.context_symbol_ids.is_empty() {
         let conn = state.db.connection();
-        for sid in &body.context_symbol_ids {
-            let result: Result<SymbolRow, _> = conn.query_row(
-                "SELECT s.name, s.kind, f.path, s.start_line, s.end_line, s.signature
-                 FROM symbols s JOIN files f ON s.file_id = f.id WHERE s.id = ?1",
-                [sid],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
-            );
-            if let Ok((name, kind, path, start, end, sig)) = result {
-                context_parts.push(format!(
-                    "- {} `{}` in `{}` (lines {}-{}){}",
-                    kind, name, path, start, end,
-                    sig.map(|s| format!("\n  Signature: {}", s)).unwrap_or_default()
-                ));
-            }
+        let placeholders: Vec<String> = body.context_symbol_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT s.name, s.kind, f.path, s.start_line, s.end_line, s.signature \
+             FROM symbols s JOIN files f ON s.file_id = f.id \
+             WHERE s.id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut stmt = conn.prepare(&sql).unwrap();
+        let params: Vec<&dyn rusqlite::types::ToSql> = body.context_symbol_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+        let rows = stmt.query_map(params.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        }).unwrap();
+        for (name, kind, path, start, end, sig) in rows.flatten() {
+            context_parts.push(format!(
+                "- {} `{}` in `{}` (lines {}-{}){}",
+                kind, name, path, start, end,
+                sig.map(|s| format!("\n  Signature: {}", s)).unwrap_or_default()
+            ));
         }
     }
 
