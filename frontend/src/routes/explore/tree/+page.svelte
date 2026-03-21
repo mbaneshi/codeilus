@@ -213,6 +213,13 @@
     // Pre-init highlighter
     getHighlighter();
 
+    // Re-highlight when theme changes
+    window.addEventListener('theme-change', () => {
+      if (sourceData && sourceData.lines.length > 0 && selectedFile?.language) {
+        highlightSource(sourceData.lines, selectedFile.language);
+      }
+    });
+
     fetchFiles().then((data) => {
       files = data;
       tree = buildTree(data);

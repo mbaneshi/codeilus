@@ -902,6 +902,13 @@
 
       graph3d = fg;
 
+      // Listen for theme changes to update canvas background
+      const onThemeChange = (e: Event) => {
+        const theme = (e as CustomEvent).detail;
+        fg.backgroundColor(theme === 'light' ? '#f8f9fb' : '#0a0a1a');
+      };
+      window.addEventListener('theme-change', onThemeChange);
+
       const observer = new ResizeObserver(() => {
         if (containerEl) {
           fg.width(containerEl.clientWidth);
@@ -909,7 +916,7 @@
         }
       });
       observer.observe(containerEl!);
-      return () => observer.disconnect();
+      return () => { observer.disconnect(); window.removeEventListener('theme-change', onThemeChange); };
     }).catch(err => {
       console.error('[graph] Failed to load 3d-force-graph:', err);
     });

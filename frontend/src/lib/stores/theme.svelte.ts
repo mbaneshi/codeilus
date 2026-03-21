@@ -21,6 +21,10 @@ function createThemeStore() {
       theme = theme === 'dark' ? 'light' : 'dark';
       applyTheme(theme);
       localStorage.setItem('codeilus-theme', theme);
+      // Notify components that need to react to theme changes
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('theme-change', { detail: theme }));
+      }
     }
   };
 }
