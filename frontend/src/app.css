@@ -5,8 +5,8 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-/* Dark theme (default) */
-:root, .dark {
+/* Dark theme (default) — applied when <html> has .dark class or no theme class */
+:root:not(.light) {
   --surface-0: #0a0a0f;
   --surface-1: #12121a;
   --surface-2: #1a1a25;
