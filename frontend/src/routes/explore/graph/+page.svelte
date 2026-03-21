@@ -1391,7 +1391,8 @@
           {/if}
 
           {#if hoveredCommunityNarrative}
-            <p class="community-card-narrative">{hoveredCommunityNarrative.slice(0, 200)}{hoveredCommunityNarrative.length > 200 ? '...' : ''}</p>
+            {@const cleanNarr = hoveredCommunityNarrative.replace(/^\s*\("[^"]*"\)\s*\n?/, '')}
+            <p class="community-card-narrative">{cleanNarr.slice(0, 200)}{cleanNarr.length > 200 ? '...' : ''}</p>
           {/if}
 
           <div class="community-card-actions">
@@ -1524,7 +1525,7 @@
                 AI Explanation
               </h3>
               <div class="narrative-body">
-                <Markdown content={nodeNarrative} />
+                <Markdown content={nodeNarrative.replace(/^\s*\("[^"]*"\)\s*\n?/, '')} />
               </div>
             </div>
           {/if}
@@ -1745,7 +1746,7 @@
           </div>
         {:else if tourNarrative}
           <div class="tour-narrative">
-            <Markdown content={tourNarrative} />
+            <Markdown content={tourNarrative.replace(/^\s*\("[^"]*"\)\s*\n?/, '')} />
           </div>
         {/if}
 
@@ -1827,7 +1828,7 @@
       {#if learnModalChapter.narrative}
         <div class="mb-4 bg-[var(--surface-2)] rounded-lg p-4">
           <h3 class="text-xs font-semibold text-[var(--c-text-muted)] uppercase tracking-wider mb-2">Module Summary</h3>
-          <Markdown content={learnModalChapter.narrative} />
+          <Markdown content={(learnModalChapter.narrative || '').replace(/^\s*\("[^"]*"\)\s*\n?/, '')} />
         </div>
       {/if}
 
