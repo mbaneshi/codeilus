@@ -299,12 +299,12 @@ async fn list_communities(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CommunityResponse>>, ApiError> {
     let conn = state.db.connection();
-    let mut communities = Vec::new();
 
-    let mut stmt = conn
+    // Load all communities
+    let mut comm_stmt = conn
         .prepare("SELECT id, name, cohesion_score FROM communities")
         .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-    let rows = stmt
+    let comm_rows = comm_stmt
         .query_map([], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
@@ -314,28 +314,42 @@ async fn list_communities(
         })
         .map_err(|e| CodeilusError::Database(Box::new(e)))?;
 
-    for row in rows {
-        let (id, name, cohesion) =
-            row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
-
-        // Fetch members for this community
-        let mut member_stmt = conn
-            .prepare("SELECT symbol_id FROM community_members WHERE community_id = ?1")
-            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-        let members: Vec<i64> = member_stmt
-            .query_map(params![id], |row| row.get(0))
-            .map_err(|e| CodeilusError::Database(Box::new(e)))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-
-        communities.push(CommunityResponse {
-            id,
-            label: name.unwrap_or_default(),
-            cohesion: cohesion.unwrap_or(0.0),
-            member_count: members.len(),
-            members,
-        });
+    let mut community_info: Vec<(i64, String, f64)> = Vec::new();
+    for row in comm_rows {
+        let (id, name, cohesion) = row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        community_info.push((id, name.unwrap_or_default(), cohesion.unwrap_or(0.0)));
     }
+
+    // Batch-load all members in one query, group by community_id
+    let mut member_stmt = conn
+        .prepare("SELECT community_id, symbol_id FROM community_members")
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+    let member_rows = member_stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+
+    let mut members_by_community: HashMap<i64, Vec<i64>> = HashMap::new();
+    for row in member_rows {
+        let (community_id, symbol_id) = row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        members_by_community
+            .entry(community_id)
+            .or_default()
+            .push(symbol_id);
+    }
+
+    let communities: Vec<CommunityResponse> = community_info
+        .into_iter()
+        .map(|(id, label, cohesion)| {
+            let members = members_by_community.remove(&id).unwrap_or_default();
+            CommunityResponse {
+                id,
+                label,
+                cohesion,
+                member_count: members.len(),
+                members,
+            }
+        })
+        .collect();
 
     Ok(Json(communities))
 }
@@ -345,12 +359,12 @@ async fn list_processes(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ProcessResponse>>, ApiError> {
     let conn = state.db.connection();
-    let mut processes = Vec::new();
 
-    let mut stmt = conn
+    // Load all processes
+    let mut proc_stmt = conn
         .prepare("SELECT id, name, entry_symbol_id FROM processes")
         .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-    let rows = stmt
+    let proc_rows = proc_stmt
         .query_map([], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
@@ -360,41 +374,54 @@ async fn list_processes(
         })
         .map_err(|e| CodeilusError::Database(Box::new(e)))?;
 
-    for row in rows {
-        let (id, name, entry_symbol_id) =
-            row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
-
-        // Fetch steps with symbol names
-        let mut step_stmt = conn
-            .prepare(
-                "SELECT ps.step_order, ps.symbol_id, COALESCE(s.name, ''), COALESCE(p.description, '') \
-                 FROM process_steps ps \
-                 LEFT JOIN symbols s ON s.id = ps.symbol_id \
-                 LEFT JOIN processes p ON p.id = ps.process_id \
-                 WHERE ps.process_id = ?1 \
-                 ORDER BY ps.step_order",
-            )
-            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-        let steps: Vec<ProcessStepResponse> = step_stmt
-            .query_map(params![id], |row| {
-                Ok(ProcessStepResponse {
-                    order: row.get(0)?,
-                    symbol_id: row.get(1)?,
-                    symbol_name: row.get(2)?,
-                    description: row.get(3)?,
-                })
-            })
-            .map_err(|e| CodeilusError::Database(Box::new(e)))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| CodeilusError::Database(Box::new(e)))?;
-
-        processes.push(ProcessResponse {
-            id,
-            name: name.unwrap_or_default(),
-            entry_symbol_id: entry_symbol_id.unwrap_or(0),
-            steps,
-        });
+    let mut process_info: Vec<(i64, String, i64)> = Vec::new();
+    for row in proc_rows {
+        let (id, name, entry_symbol_id) = row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        process_info.push((id, name.unwrap_or_default(), entry_symbol_id.unwrap_or(0)));
     }
+
+    // Batch-load all steps with symbol names in one query
+    let mut step_stmt = conn
+        .prepare(
+            "SELECT ps.process_id, ps.step_order, ps.symbol_id, COALESCE(s.name, ''), COALESCE(p.description, '') \
+             FROM process_steps ps \
+             LEFT JOIN symbols s ON s.id = ps.symbol_id \
+             LEFT JOIN processes p ON p.id = ps.process_id \
+             ORDER BY ps.process_id, ps.step_order",
+        )
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+    let step_rows = step_stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                ProcessStepResponse {
+                    order: row.get(1)?,
+                    symbol_id: row.get(2)?,
+                    symbol_name: row.get(3)?,
+                    description: row.get(4)?,
+                },
+            ))
+        })
+        .map_err(|e| CodeilusError::Database(Box::new(e)))?;
+
+    let mut steps_by_process: HashMap<i64, Vec<ProcessStepResponse>> = HashMap::new();
+    for row in step_rows {
+        let (process_id, step) = row.map_err(|e| CodeilusError::Database(Box::new(e)))?;
+        steps_by_process.entry(process_id).or_default().push(step);
+    }
+
+    let processes: Vec<ProcessResponse> = process_info
+        .into_iter()
+        .map(|(id, name, entry_symbol_id)| {
+            let steps = steps_by_process.remove(&id).unwrap_or_default();
+            ProcessResponse {
+                id,
+                name,
+                entry_symbol_id,
+                steps,
+            }
+        })
+        .collect();
 
     Ok(Json(processes))
 }

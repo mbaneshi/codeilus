@@ -1,64 +1,36 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import {
-    fetchGraph, fetchCommunityGraph, fetchCommunities, fetchFiles,
-    fetchNarrativeByTarget, fetchFileSource,
-  } from '$lib/api';
-  import type {
-    GraphNode, GraphEdge, Community, CommunityGraphNode, CommunityGraphEdge,
-    FileRow, SymbolRow, NarrativeResponse, SourceResponse,
-  } from '$lib/types';
-  import type { SchematicNode, SchematicEdge } from '$lib/schematic/types';
-  import { computeLayout, type LayoutResult } from '$lib/schematic/elk-layout';
-  import { edgePathD, edgeMidpoint } from '$lib/schematic/edge-path';
-  import SchematicCanvas from '$lib/schematic/SchematicCanvas.svelte';
-  import SchematicSearch from '$lib/schematic/SchematicSearch.svelte';
-  import SchematicModal from '$lib/schematic/SchematicModal.svelte';
+  import { fetchGraph, fetchCommunityGraph, fetchCommunities, fetchFiles, fetchNarrativeByTarget, fetchFileSource } from '$lib/api';
+  import type { GraphNode, GraphEdge, Community, CommunityGraphNode, CommunityGraphEdge, FileRow, NarrativeResponse, SourceResponse } from '$lib/types';
+  import { layoutLayered, type LayoutNode, type LayoutEdge } from '$lib/schematic/layout';
   import { LoadingSpinner } from '$lib/components';
-  import { ArrowLeft, ChevronRight, Network, Layers, FileCode } from 'lucide-svelte';
 
-  const COMMUNITY_COLORS = [
-    '#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6',
-    '#06b6d4', '#f97316', '#84cc16', '#ef4444', '#a855f7',
-  ];
-
-  const EDGE_COLORS: Record<string, string> = {
-    'CALLS': '#6366f1', 'IMPORTS': '#14b8a6', 'EXTENDS': '#f59e0b',
-    'IMPLEMENTS': '#ec4899', 'CONTAINS': '#4b5563',
-  };
-
-  const KIND_BADGES: Record<string, { label: string; bg: string }> = {
-    function: { label: 'FUN', bg: 'rgba(99,102,241,0.15)' },
-    method:   { label: 'MTD', bg: 'rgba(99,102,241,0.15)' },
-    class:    { label: 'CLS', bg: 'rgba(236,72,153,0.15)' },
-    struct:   { label: 'STR', bg: 'rgba(20,184,166,0.15)' },
-    enum:     { label: 'ENM', bg: 'rgba(245,158,11,0.15)' },
-    trait:    { label: 'TRT', bg: 'rgba(139,92,246,0.15)' },
-    interface:{ label: 'IFC', bg: 'rgba(139,92,246,0.15)' },
-    impl:     { label: 'IMP', bg: 'rgba(6,182,212,0.15)' },
-    module:   { label: 'MOD', bg: 'rgba(132,204,22,0.15)' },
-    constant: { label: 'CON', bg: 'rgba(156,163,175,0.15)' },
-  };
-
-  type ZoomLevel = 'communities' | 'community' | 'symbols';
+  const COMMUNITY_COLORS = ['#6366f1','#ec4899','#14b8a6','#f59e0b','#8b5cf6','#06b6d4','#f97316','#84cc16','#ef4444','#a855f7'];
+  const EDGE_COLORS: Record<string, string> = { CALLS:'#6366f1', IMPORTS:'#14b8a6', EXTENDS:'#f59e0b', IMPLEMENTS:'#ec4899', CONTAINS:'#4b5563' };
+  const KIND_LABELS: Record<string, string> = { function:'FUN', method:'MTD', class:'CLS', struct:'STR', enum:'ENM', trait:'TRT', interface:'IFC', impl:'IMP', module:'MOD' };
 
   let loading = $state(true);
-  let zoomLevel = $state<ZoomLevel>('communities');
-  let layout = $state<LayoutResult | null>(null);
-  let flatNodes = $state<SchematicNode[]>([]);
-  let visibleEdges = $state<SchematicEdge[]>([]);
+  let nodes = $state<LayoutNode[]>([]);
+  let edges = $state<LayoutEdge[]>([]);
+  let canvasW = $state(4000);
+  let canvasH = $state(3000);
+  let searchQuery = $state('');
   let highlighted = $state<Set<string>>(new Set());
-  let canvasRef: SchematicCanvas | undefined = $state();
   let breadcrumb = $state<{ label: string; action: () => void }[]>([]);
 
   // Raw data
-  let allNodes = $state<GraphNode[]>([]);
-  let allEdges = $state<GraphEdge[]>([]);
-  let communities = $state<Community[]>([]);
-  let communityNodes = $state<CommunityGraphNode[]>([]);
-  let communityEdges = $state<CommunityGraphEdge[]>([]);
-  let files = $state<FileRow[]>([]);
-  let activeCommunityId = $state<number | null>(null);
+  let allNodes: GraphNode[] = [];
+  let allEdges: GraphEdge[] = [];
+  let communities: Community[] = [];
+  let communityNodes: CommunityGraphNode[] = [];
+  let communityEdges: CommunityGraphEdge[] = [];
+  let files: FileRow[] = [];
+
+  // Pan/zoom
+  let tx = $state(20);
+  let ty = $state(20);
+  let scale = $state(0.8);
+  let dragging = $state(false);
+  let dragStart = { x: 0, y: 0, tx: 0, ty: 0 };
 
   // Modal
   let modalOpen = $state(false);
@@ -67,299 +39,251 @@
   let modalNarrative = $state<NarrativeResponse | null>(null);
   let modalSource = $state<SourceResponse | null>(null);
   let modalLoading = $state(false);
-  let modalConnections = $state<{ callers: GraphNode[]; callees: GraphNode[] }>({ callers: [], callees: [] });
+  let modalCallers = $state<GraphNode[]>([]);
+  let modalCallees = $state<GraphNode[]>([]);
 
-  function communityColor(id: number): string {
-    return COMMUNITY_COLORS[id % COMMUNITY_COLORS.length];
-  }
+  function commColor(id: number) { return COMMUNITY_COLORS[id % COMMUNITY_COLORS.length]; }
+  function fileName(fid: number) { const f = files.find(f => f.id === fid); return f ? (f.path.split('/').pop() || f.path) : ''; }
 
-  function fileNameById(fileId: number): string {
-    const f = files.find(f => f.id === fileId);
-    return f ? (f.path.split('/').pop() || f.path) : `file:${fileId}`;
-  }
-
-  async function showCommunities() {
-    zoomLevel = 'communities';
-    activeCommunityId = null;
+  function showCommunities() {
     breadcrumb = [];
-
-    const nodes: SchematicNode[] = communityNodes.map(c => ({
-      id: `comm-${c.id}`,
-      label: c.label || `Community ${c.id}`,
-      width: Math.max(160, (c.label || '').length * 8 + 60),
-      height: 60,
-      metadata: { type: 'community', communityId: c.id, memberCount: c.member_count, cohesion: c.cohesion },
-    }));
-
-    const edges: SchematicEdge[] = communityEdges.map((e, i) => ({
-      id: `ce-${i}`,
-      source: `comm-${e.source_id}`,
-      target: `comm-${e.target_id}`,
-      kind: 'CALLS',
-    }));
-
-    flatNodes = nodes;
-    visibleEdges = edges;
-    layout = await computeLayout(nodes, edges, { algorithm: 'layered', direction: 'RIGHT', nodeSpacing: 30, layerSpacing: 80 });
-    requestAnimationFrame(() => canvasRef?.fitToView(layout!.width, layout!.height));
+    const result = layoutLayered({
+      nodes: communityNodes.map(c => ({
+        id: `c-${c.id}`,
+        label: c.label || `Community ${c.id}`,
+        data: { type: 'community', communityId: c.id, memberCount: c.member_count, cohesion: c.cohesion },
+      })),
+      edges: communityEdges.map((e, i) => ({ from: `c-${e.source_id}`, to: `c-${e.target_id}` })),
+    });
+    nodes = result.nodes;
+    edges = result.edges;
+    canvasW = result.width;
+    canvasH = result.height;
   }
 
-  async function drillIntoCommunity(communityId: number) {
-    loading = true;
-    zoomLevel = 'community';
-    activeCommunityId = communityId;
+  function drillCommunity(communityId: number) {
     const comm = communities.find(c => c.id === communityId);
-    const commLabel = comm?.label || `Community ${communityId}`;
-
-    breadcrumb = [
-      { label: 'All Communities', action: () => { showCommunities(); } },
-    ];
-
+    breadcrumb = [{ label: 'Communities', action: showCommunities }];
     const members = new Set(comm?.members || []);
     const memberNodes = allNodes.filter(n => members.has(n.id));
     const memberEdges = allEdges.filter(e => members.has(e.source_id) && members.has(e.target_id));
 
-    const nodes: SchematicNode[] = memberNodes.map(n => ({
-      id: `sym-${n.id}`,
-      label: n.name,
-      width: Math.max(140, n.name.length * 7 + 50),
-      height: 44,
-      metadata: { type: 'symbol', node: n, kind: n.kind, fileId: n.file_id, communityId: n.community_id },
-    }));
-
-    const edges: SchematicEdge[] = memberEdges.map((e, i) => ({
-      id: `se-${i}`,
-      source: `sym-${e.source_id}`,
-      target: `sym-${e.target_id}`,
-      kind: e.kind,
-      label: e.kind.toLowerCase(),
-    }));
-
-    flatNodes = nodes;
-    visibleEdges = edges;
-    layout = await computeLayout(nodes, edges, { algorithm: 'layered', direction: 'DOWN', nodeSpacing: 20, layerSpacing: 50 });
-    loading = false;
-    requestAnimationFrame(() => canvasRef?.fitToView(layout!.width, layout!.height));
+    const result = layoutLayered({
+      nodes: memberNodes.map(n => ({
+        id: `s-${n.id}`,
+        label: n.name,
+        data: { type: 'symbol', node: n, kind: n.kind, fileId: n.file_id, communityId: n.community_id },
+      })),
+      edges: memberEdges.map((e, i) => ({ from: `s-${e.source_id}`, to: `s-${e.target_id}`, kind: e.kind, label: e.kind.toLowerCase() })),
+    });
+    nodes = result.nodes;
+    edges = result.edges;
+    canvasW = result.width;
+    canvasH = result.height;
   }
 
-  async function openSymbolModal(node: GraphNode) {
+  function handleNodeClick(node: LayoutNode) {
+    if (node.data.type === 'community') {
+      drillCommunity(node.data.communityId as number);
+    } else if (node.data.type === 'symbol') {
+      openSymbolModal(node.data.node as GraphNode);
+    }
+  }
+
+  async function openSymbolModal(gn: GraphNode) {
     modalOpen = true;
-    modalTitle = node.name;
-    modalSymbol = node;
+    modalTitle = gn.name;
+    modalSymbol = gn;
     modalNarrative = null;
     modalSource = null;
     modalLoading = true;
-
-    const callers = allEdges.filter(e => e.target_id === node.id).map(e => allNodes.find(n => n.id === e.source_id)).filter(Boolean) as GraphNode[];
-    const callees = allEdges.filter(e => e.source_id === node.id).map(e => allNodes.find(n => n.id === e.target_id)).filter(Boolean) as GraphNode[];
-    modalConnections = { callers, callees };
-
+    modalCallers = allEdges.filter(e => e.target_id === gn.id).map(e => allNodes.find(n => n.id === e.source_id)).filter(Boolean) as GraphNode[];
+    modalCallees = allEdges.filter(e => e.source_id === gn.id).map(e => allNodes.find(n => n.id === e.target_id)).filter(Boolean) as GraphNode[];
     const [narr, src] = await Promise.all([
-      fetchNarrativeByTarget('symbol_explanation', node.id),
-      fetchFileSource(node.file_id),
+      fetchNarrativeByTarget('symbol_explanation', gn.id),
+      fetchFileSource(gn.file_id),
     ]);
     modalNarrative = narr;
     modalSource = src;
     modalLoading = false;
   }
 
-  function handleNodeClick(nodeId: string) {
-    const node = flatNodes.find(n => n.id === nodeId);
-    if (!node) return;
-    if (node.metadata.type === 'community') {
-      drillIntoCommunity(node.metadata.communityId as number);
-    } else if (node.metadata.type === 'symbol') {
-      openSymbolModal(node.metadata.node as GraphNode);
-    }
+  function doSearch() {
+    if (searchQuery.trim().length < 2) { highlighted = new Set(); return; }
+    const q = searchQuery.toLowerCase();
+    highlighted = new Set(nodes.filter(n => n.label.toLowerCase().includes(q)).map(n => n.id));
   }
 
-  function handleFocus(nodeId: string) {
-    const pos = layout?.nodes.get(nodeId);
-    if (pos && canvasRef) {
-      canvasRef.zoomToNode(pos.x, pos.y, pos.width, pos.height);
-    }
+  function onWheel(e: WheelEvent) { e.preventDefault(); scale = Math.max(0.05, Math.min(4, scale * (e.deltaY > 0 ? 0.92 : 1.08))); }
+  function onPointerDown(e: PointerEvent) { if (e.button !== 0) return; dragging = true; dragStart = { x: e.clientX, y: e.clientY, tx, ty }; }
+  function onPointerMove(e: PointerEvent) { if (!dragging) return; tx = dragStart.tx + (e.clientX - dragStart.x); ty = dragStart.ty + (e.clientY - dragStart.y); }
+  function onPointerUp() { dragging = false; }
+
+  let nodeMap = $derived(new Map(nodes.map(n => [n.id, n])));
+
+  function edgeLine(from: LayoutNode, to: LayoutNode): string {
+    const x1 = from.x + from.width / 2, y1 = from.y + from.height;
+    const x2 = to.x + to.width / 2, y2 = to.y;
+    return `M ${x1} ${y1} L ${x2} ${y2}`;
   }
 
-  onMount(async () => {
-    const [graphData, commGraph, comms, fileList] = await Promise.all([
-      fetchGraph(), fetchCommunityGraph(), fetchCommunities(), fetchFiles(),
-    ]);
-    allNodes = graphData.nodes;
-    allEdges = graphData.edges;
-    communities = comms;
-    communityNodes = commGraph.nodes;
-    communityEdges = commGraph.edges;
-    files = fileList;
-
-    await showCommunities();
+  Promise.all([fetchGraph(), fetchCommunityGraph(), fetchCommunities(), fetchFiles()]).then(([gd, cg, co, fl]) => {
+    allNodes = gd.nodes;
+    allEdges = gd.edges;
+    communities = co;
+    communityNodes = cg.nodes;
+    communityEdges = cg.edges;
+    files = fl;
+    showCommunities();
     loading = false;
   });
 </script>
 
 <div class="h-full flex flex-col">
   <div class="flex items-center gap-3 px-5 py-3 border-b border-[var(--c-border)] bg-[var(--surface-1)] shrink-0">
-    <a href="/explore" class="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--c-text-muted)] hover:text-[var(--c-text-primary)] transition-colors">
-      <ArrowLeft size={16} />
-    </a>
-    <Network size={18} class="text-violet-400" />
+    <a href="/explore" class="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--c-text-muted)] hover:text-[var(--c-text-primary)] transition-colors text-sm">&larr;</a>
     <h1 class="text-base font-semibold">Symbol Graph</h1>
-
-    {#if breadcrumb.length > 0}
-      {#each breadcrumb as crumb}
-        <ChevronRight size={14} class="text-[var(--c-text-muted)]" />
-        <button onclick={crumb.action} class="text-sm text-[var(--c-accent)] hover:underline">{crumb.label}</button>
-      {/each}
-      <ChevronRight size={14} class="text-[var(--c-text-muted)]" />
-      <span class="text-sm text-[var(--c-text-secondary)]">
-        {#if activeCommunityId !== null}
-          {communities.find(c => c.id === activeCommunityId)?.label || `Community ${activeCommunityId}`}
-        {/if}
-      </span>
-    {/if}
-
-    <span class="text-xs text-[var(--c-text-muted)] ml-auto">{flatNodes.length} nodes</span>
+    {#each breadcrumb as crumb}
+      <span class="text-[var(--c-text-muted)]">&rsaquo;</span>
+      <button onclick={crumb.action} class="text-sm text-[var(--c-accent)] hover:underline">{crumb.label}</button>
+    {/each}
+    <span class="text-xs text-[var(--c-text-muted)] ml-auto">{nodes.length} nodes</span>
+    <input
+      type="text"
+      placeholder="Search..."
+      class="bg-[var(--surface-2)] border border-[var(--c-border)] rounded-lg px-3 py-1 text-sm text-[var(--c-text-primary)] placeholder:text-[var(--c-text-muted)] focus:border-[var(--c-accent)] outline-none w-40"
+      bind:value={searchQuery}
+      oninput={doSearch}
+    />
   </div>
 
   <div class="flex-1 min-h-0 relative">
     {#if loading}
-      <div class="flex items-center justify-center h-full">
-        <LoadingSpinner />
-      </div>
+      <div class="flex items-center justify-center h-full"><LoadingSpinner /></div>
     {:else}
-      <SchematicSearch
-        nodes={flatNodes}
-        onfocus={handleFocus}
-        onhighlight={(ids) => highlighted = ids}
-      />
-      <SchematicCanvas bind:this={canvasRef} width={layout?.width ?? 4000} height={layout?.height ?? 3000}>
-        {#snippet children()}
-          <!-- Edges -->
-          {#each visibleEdges as edge}
-            {@const pts = layout?.edges.get(edge.id)?.points}
-            {@const color = EDGE_COLORS[edge.kind || ''] || 'var(--c-border-hover)'}
-            {#if pts}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <svg
+        class="w-full h-full select-none"
+        style="cursor: {dragging ? 'grabbing' : 'grab'}; background: var(--surface-0);"
+        onwheel={onWheel}
+        onpointerdown={onPointerDown}
+        onpointermove={onPointerMove}
+        onpointerup={onPointerUp}
+      >
+        <defs>
+          <marker id="ah" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
+            <polygon points="0 0, 6 2, 0 4" fill="var(--c-text-muted)" opacity="0.4" />
+          </marker>
+        </defs>
+        <g transform="translate({tx},{ty}) scale({scale})">
+          {#each edges as edge}
+            {@const from = nodeMap.get(edge.from)}
+            {@const to = nodeMap.get(edge.to)}
+            {#if from && to}
               <path
-                d={edgePathD(pts)}
+                d={edgeLine(from, to)}
                 fill="none"
-                stroke={color}
-                stroke-width="1.5"
-                marker-end="url(#arrowhead)"
+                stroke={EDGE_COLORS[edge.kind || ''] || 'var(--c-border-hover)'}
+                stroke-width="1.2"
+                marker-end="url(#ah)"
                 opacity="0.5"
               />
-              {#if edge.label}
-                {@const mid = edgeMidpoint(pts)}
-                <text x={mid.x} y={mid.y - 6} text-anchor="middle" fill="var(--c-text-muted)" font-size="9">{edge.label}</text>
+            {/if}
+          {/each}
+
+          {#each nodes as node}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <g transform="translate({node.x},{node.y})" onclick={() => handleNodeClick(node)} style="cursor: pointer">
+              {#if node.data.type === 'community'}
+                {@const cid = node.data.communityId as number}
+                <rect
+                  width={node.width} height={node.height} rx="8"
+                  fill="var(--surface-1)"
+                  stroke={highlighted.has(node.id) ? 'var(--c-accent)' : commColor(cid)}
+                  stroke-width={highlighted.has(node.id) ? 2.5 : 2}
+                />
+                <circle cx="14" cy={node.height / 2} r="5" fill={commColor(cid)} />
+                <text x="26" y="15" font-size="11" fill="var(--c-text-primary)" font-weight="600" font-family="var(--font-sans)">{node.label}</text>
+                <text x="26" y="28" font-size="9" fill="var(--c-text-muted)" font-family="var(--font-sans)">{node.data.memberCount} symbols</text>
+              {:else}
+                {@const gn = node.data.node as GraphNode}
+                {@const cid = gn.community_id ?? 0}
+                <rect
+                  width={node.width} height={node.height} rx="6"
+                  fill="var(--surface-1)"
+                  stroke={highlighted.has(node.id) ? 'var(--c-accent)' : commColor(cid)}
+                  stroke-width={highlighted.has(node.id) ? 2 : 1}
+                />
+                <rect x="0" y="0" width="3" height={node.height} rx="1.5" fill={commColor(cid)} />
+                <text x="10" y="14" font-size="9" fill="var(--c-text-muted)" font-family="var(--font-sans)">{KIND_LABELS[gn.kind] || gn.kind}</text>
+                <text x="10" y="28" font-size="11" fill="var(--c-text-primary)" font-family="var(--font-mono)">{node.label}</text>
               {/if}
-            {/if}
+            </g>
           {/each}
-
-          <!-- Nodes -->
-          {#each flatNodes as node}
-            {@const pos = layout?.nodes.get(node.id)}
-            {#if pos}
-              <!-- svelte-ignore a11y_click_events_have_key_events -->
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <g
-                transform="translate({pos.x},{pos.y})"
-                onclick={() => handleNodeClick(node.id)}
-                style="cursor: pointer"
-              >
-                {#if node.metadata.type === 'community'}
-                  {@const cid = node.metadata.communityId as number}
-                  <rect
-                    width={pos.width} height={pos.height} rx="10"
-                    fill="var(--surface-1)"
-                    stroke={highlighted.has(node.id) ? 'var(--c-accent)' : communityColor(cid)}
-                    stroke-width={highlighted.has(node.id) ? 2.5 : 2}
-                  />
-                  <foreignObject width={pos.width} height={pos.height}>
-                    <div class="flex flex-col items-center justify-center h-full gap-1" xmlns="http://www.w3.org/1999/xhtml">
-                      <div class="flex items-center gap-2">
-                        <span class="w-2.5 h-2.5 rounded-full" style="background: {communityColor(cid)}"></span>
-                        <span class="text-xs font-semibold text-[var(--c-text-primary)]">{node.label}</span>
-                      </div>
-                      <span class="text-[10px] text-[var(--c-text-muted)]">{node.metadata.memberCount} symbols</span>
-                    </div>
-                  </foreignObject>
-
-                {:else if node.metadata.type === 'symbol'}
-                  {@const gn = node.metadata.node as GraphNode}
-                  {@const cid = gn.community_id ?? 0}
-                  {@const badge = KIND_BADGES[gn.kind] || { label: gn.kind.slice(0,3).toUpperCase(), bg: 'rgba(156,163,175,0.15)' }}
-                  <rect
-                    width={pos.width} height={pos.height} rx="8"
-                    fill="var(--surface-1)"
-                    stroke={highlighted.has(node.id) ? 'var(--c-accent)' : communityColor(cid)}
-                    stroke-width={highlighted.has(node.id) ? 2 : 1}
-                  />
-                  <!-- Community color accent bar -->
-                  <rect x="0" y="0" width="3" height={pos.height} rx="1.5" fill={communityColor(cid)} />
-                  <foreignObject width={pos.width} height={pos.height}>
-                    <div class="flex items-center gap-2 px-3 h-full" xmlns="http://www.w3.org/1999/xhtml">
-                      <span class="px-1.5 py-0.5 rounded text-[10px] font-medium" style="background: {badge.bg}; color: var(--c-text-secondary)">{badge.label}</span>
-                      <span class="text-xs font-mono text-[var(--c-text-primary)] truncate">{node.label}</span>
-                      <span class="text-[10px] text-[var(--c-text-muted)] ml-auto shrink-0">{fileNameById(gn.file_id)}</span>
-                    </div>
-                  </foreignObject>
-                {/if}
-              </g>
-            {/if}
-          {/each}
-        {/snippet}
-      </SchematicCanvas>
+        </g>
+      </svg>
     {/if}
   </div>
 </div>
 
-<!-- Symbol Detail Modal -->
-<SchematicModal open={modalOpen} title={modalTitle} onclose={() => modalOpen = false}>
-  {#snippet children()}
-    {#if modalLoading}
-      <div class="flex justify-center py-8"><LoadingSpinner /></div>
-    {:else if modalSymbol}
-      {@const badge = KIND_BADGES[modalSymbol.kind] || { label: modalSymbol.kind, bg: 'rgba(156,163,175,0.15)' }}
-      <div class="space-y-4">
-        <div class="flex items-center gap-2">
-          <span class="px-2 py-0.5 rounded text-xs font-medium" style="background: {badge.bg}">{badge.label}</span>
-          <span class="text-sm text-[var(--c-text-secondary)]">{fileNameById(modalSymbol.file_id)}</span>
-        </div>
-
-        {#if modalNarrative?.content}
-          <div>
-            <h3 class="text-sm font-medium text-[var(--c-text-primary)] mb-2">Explanation</h3>
-            <p class="text-sm text-[var(--c-text-secondary)] leading-relaxed">{modalNarrative.content}</p>
+<!-- Modal -->
+{#if modalOpen}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="fixed inset-0 z-50 flex justify-end" onclick={() => modalOpen = false}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="w-[400px] h-full bg-[var(--surface-1)] border-l border-[var(--c-border)] shadow-2xl overflow-auto" onclick={(e) => e.stopPropagation()}>
+      <div class="flex items-center justify-between px-5 py-4 border-b border-[var(--c-border)] sticky top-0 bg-[var(--surface-1)]">
+        <h2 class="text-base font-semibold text-[var(--c-text-primary)] truncate">{modalTitle}</h2>
+        <button onclick={() => modalOpen = false} class="text-[var(--c-text-muted)] hover:text-[var(--c-text-primary)]">✕</button>
+      </div>
+      <div class="p-5 space-y-4">
+        {#if modalLoading}
+          <LoadingSpinner />
+        {:else if modalSymbol}
+          <div class="flex items-center gap-2 text-sm">
+            <span class="px-2 py-0.5 rounded bg-[var(--surface-2)] text-[var(--c-text-muted)] text-xs">{KIND_LABELS[modalSymbol.kind] || modalSymbol.kind}</span>
+            <span class="text-[var(--c-text-secondary)]">{fileName(modalSymbol.file_id)}</span>
           </div>
-        {/if}
 
-        {#if modalConnections.callers.length > 0}
-          <div>
-            <h3 class="text-sm font-medium text-[var(--c-text-primary)] mb-2">Called by ({modalConnections.callers.length})</h3>
-            <div class="flex flex-wrap gap-1">
-              {#each modalConnections.callers.slice(0, 10) as caller}
-                <span class="px-2 py-1 bg-[var(--surface-2)] rounded text-xs font-mono text-[var(--c-text-secondary)]">{caller.name}</span>
-              {/each}
+          {#if modalNarrative?.content}
+            <div>
+              <h3 class="text-sm font-medium text-[var(--c-text-primary)] mb-1">Explanation</h3>
+              <p class="text-sm text-[var(--c-text-secondary)] leading-relaxed">{modalNarrative.content}</p>
             </div>
-          </div>
-        {/if}
+          {/if}
 
-        {#if modalConnections.callees.length > 0}
-          <div>
-            <h3 class="text-sm font-medium text-[var(--c-text-primary)] mb-2">Calls ({modalConnections.callees.length})</h3>
-            <div class="flex flex-wrap gap-1">
-              {#each modalConnections.callees.slice(0, 10) as callee}
-                <span class="px-2 py-1 bg-[var(--surface-2)] rounded text-xs font-mono text-[var(--c-text-secondary)]">{callee.name}</span>
-              {/each}
+          {#if modalCallers.length > 0}
+            <div>
+              <h3 class="text-sm font-medium text-[var(--c-text-primary)] mb-1">Called by ({modalCallers.length})</h3>
+              <div class="flex flex-wrap gap-1">
+                {#each modalCallers.slice(0, 10) as c}
+                  <span class="px-2 py-1 bg-[var(--surface-2)] rounded text-xs font-mono text-[var(--c-text-secondary)]">{c.name}</span>
+                {/each}
+              </div>
             </div>
-          </div>
-        {/if}
+          {/if}
 
-        {#if modalSource}
-          <div>
-            <h3 class="text-sm font-medium text-[var(--c-text-primary)] mb-2">Source</h3>
-            <pre class="text-[11px] font-mono bg-[var(--surface-2)] rounded-lg p-3 overflow-auto max-h-64 text-[var(--c-text-secondary)]">{modalSource.lines.map(l => `${String(l.number).padStart(3)} ${l.content}`).join('\n')}</pre>
-          </div>
+          {#if modalCallees.length > 0}
+            <div>
+              <h3 class="text-sm font-medium text-[var(--c-text-primary)] mb-1">Calls ({modalCallees.length})</h3>
+              <div class="flex flex-wrap gap-1">
+                {#each modalCallees.slice(0, 10) as c}
+                  <span class="px-2 py-1 bg-[var(--surface-2)] rounded text-xs font-mono text-[var(--c-text-secondary)]">{c.name}</span>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if modalSource}
+            <div>
+              <h3 class="text-sm font-medium text-[var(--c-text-primary)] mb-1">Source</h3>
+              <pre class="text-[11px] font-mono bg-[var(--surface-2)] rounded-lg p-3 overflow-auto max-h-64 text-[var(--c-text-secondary)]">{modalSource.lines.map(l => `${String(l.number).padStart(3)} ${l.content}`).join('\n')}</pre>
+            </div>
+          {/if}
         {/if}
       </div>
-    {/if}
-  {/snippet}
-</SchematicModal>
+    </div>
+  </div>
+{/if}

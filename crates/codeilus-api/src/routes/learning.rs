@@ -206,10 +206,13 @@ async fn skip_chapter(
         )).into());
     }
 
+    // Batch: get already-completed sections in one query, then only insert missing
+    let completed = progress_repo.list_completed_sections(chapter_id)?;
+    let completed_set: std::collections::HashSet<&str> = completed.iter().map(|s| s.as_str()).collect();
+
     let mut skipped = 0;
     for (_section_id, content_type) in &sections {
-        // Only mark incomplete sections
-        if !progress_repo.is_section_complete(chapter_id, content_type)? {
+        if !completed_set.contains(content_type.as_str()) {
             progress_repo.record_section(chapter_id, content_type)?;
             skipped += 1;
         }

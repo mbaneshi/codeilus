@@ -17,16 +17,29 @@ use crate::state::AppState;
 #[derive(Deserialize)]
 pub struct FileListQuery {
     pub language: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
-/// GET /api/v1/files — List all files, optional ?language= filter
+/// GET /api/v1/files — List files with pagination, optional ?language= filter
 async fn list_files(
     State(state): State<AppState>,
     Query(query): Query<FileListQuery>,
-) -> Result<Json<Vec<FileRow>>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let cache_key = format!("files:l={:?}:l={}:o={}", query.language, limit, offset);
+
+    if let Some(cached) = state.cache.json.get(&cache_key) {
+        return Ok(Json(cached));
+    }
+
     let repo = FileRepo::new(Arc::clone(&state.db));
-    let files = repo.list(query.language.as_deref())?;
-    Ok(Json(files))
+    let files = repo.list_paginated(query.language.as_deref(), limit, offset)?;
+    let value = serde_json::to_value(&files)
+        .map_err(|e| ApiError::from(codeilus_core::error::CodeilusError::Internal(e.to_string())))?;
+    state.cache.json.insert(cache_key, value.clone());
+    Ok(Json(value))
 }
 
 /// GET /api/v1/files/:id — Get a single file by ID
@@ -83,24 +96,32 @@ async fn get_file_source(
         message: "No repository has been analyzed".to_string(),
     })?;
 
-    // Resolve the file path relative to repo root
+    // Resolve the file path — handle both relative and absolute paths
     let clean_path = file.path.strip_prefix("./").unwrap_or(&file.path);
-    let full_path = repo_root.join(clean_path);
+    let full_path = if std::path::Path::new(clean_path).is_absolute() {
+        std::path::PathBuf::from(clean_path)
+    } else {
+        repo_root.join(clean_path)
+    };
 
-    // Canonicalize and verify the path stays within repo root (prevent path traversal)
+    // Canonicalize and verify the path exists and is safe
     let canonical = full_path.canonicalize().map_err(|e| ApiError {
         status: StatusCode::NOT_FOUND,
         message: format!("Could not resolve file path: {}", e),
     })?;
-    let canonical_root = repo_root.canonicalize().map_err(|e| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: format!("Could not resolve repo root: {}", e),
-    })?;
-    if !canonical.starts_with(&canonical_root) {
-        return Err(ApiError {
-            status: StatusCode::FORBIDDEN,
-            message: "Path traversal detected".to_string(),
-        });
+
+    // For relative paths, verify within repo root (prevent traversal)
+    if !std::path::Path::new(clean_path).is_absolute() {
+        let canonical_root = repo_root.canonicalize().map_err(|e| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: format!("Could not resolve repo root: {}", e),
+        })?;
+        if !canonical.starts_with(&canonical_root) {
+            return Err(ApiError {
+                status: StatusCode::FORBIDDEN,
+                message: "Path traversal detected".to_string(),
+            });
+        }
     }
 
     let content = std::fs::read_to_string(&canonical).map_err(|e| {

@@ -244,7 +244,7 @@
                       <GraduationCap size={14} class="text-[var(--c-accent)]" />
                       <span class="text-xs font-semibold uppercase tracking-wider text-[var(--c-text-muted)]">Module Explanation</span>
                     </div>
-                    <Markdown content={chapter.narrative} />
+                    <Markdown content={chapter.narrative.replace(/^\s*\("[^"]*"\)\s*\n?/, '')} />
                   </div>
                 {/if}
 
