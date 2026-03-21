@@ -235,7 +235,10 @@
     if (!contextMenuNode) return;
     const sn = contextMenuNode;
     switch (action) {
-      case 'copy-name': navigator.clipboard?.writeText(sn.label); break;
+      case 'copy-name': {
+        try { navigator.clipboard?.writeText(sn.label); } catch { /* fallback */ }
+        break;
+      }
       case 'focus-here': {
         const pos = layoutNodes.find(n => n.id === sn.id);
         if (pos) { const fit = computeFitToView([pos], containerW, containerH, 100); tx = fit.tx; ty = fit.ty; scale = fit.scale; }

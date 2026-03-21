@@ -303,12 +303,22 @@ impl SchematicRepo {
             chapter_id: None, chapter_title: None, difficulty: None, progress: None,
         });
 
+        // Find common prefix for path normalization
+        let common_prefix = if files.len() > 1 {
+            let paths: Vec<&str> = files.iter().map(|(_, p, _, _)| p.as_str()).collect();
+            find_common_dir_prefix(&paths)
+        } else {
+            String::new()
+        };
+
         // Process files into directory tree
         let mut all_dirs: HashMap<String, bool> = HashMap::new();
         all_dirs.insert(".".to_string(), true);
 
         for (fid, path, lang, sloc) in &files {
-            let clean = path.strip_prefix("./").unwrap_or(path);
+            let clean = path.strip_prefix(&common_prefix).unwrap_or(path);
+            let clean = clean.strip_prefix('/').unwrap_or(clean);
+            let clean = clean.strip_prefix("./").unwrap_or(clean);
             let parts: Vec<&str> = clean.split('/').collect();
 
             // Create intermediate directory nodes
@@ -501,27 +511,38 @@ impl SchematicRepo {
         let mut edges = Vec::new();
 
         if let Some(dir_path) = node_id.strip_prefix("dir:") {
-            // Expand directory: return child dirs and files
-            let dir_prefix = if dir_path == "." { String::new() } else { format!("{}/", dir_path) };
-            let mut stmt = conn.prepare("SELECT id, path, language, sloc FROM files WHERE path LIKE ?1 ORDER BY path")
+            // Load ALL files, find common prefix, then filter to this directory's children
+            let mut stmt = conn.prepare("SELECT id, path, language, sloc FROM files ORDER BY path")
                 .map_err(db_err)?;
-            let pattern = format!("./{}{}", dir_prefix, "%");
-            let files: Vec<(i64, String, Option<String>, i64)> = stmt.query_map(params![pattern], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            let all_files: Vec<(i64, String, Option<String>, i64)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
                 .map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+
+            // Find common prefix to normalize paths (handles both "./crates/..." and "/abs/path/..." )
+            let common_prefix = if all_files.len() > 1 {
+                let paths: Vec<&str> = all_files.iter().map(|(_, p, _, _)| p.as_str()).collect();
+                find_common_dir_prefix(&paths)
+            } else {
+                String::new()
+            };
 
             // Extract direct children: subdirs and files
             let mut seen_dirs: HashMap<String, bool> = HashMap::new();
-            for (fid, path, lang, sloc) in &files {
-                let clean = path.strip_prefix("./").unwrap_or(path);
-                let relative = if dir_path == "." { clean.to_string() } else {
+            for (fid, path, lang, sloc) in &all_files {
+                let clean = path.strip_prefix(&common_prefix).unwrap_or(path);
+                let clean = clean.strip_prefix('/').unwrap_or(clean);
+                let clean = clean.strip_prefix("./").unwrap_or(clean);
+
+                let relative = if dir_path == "." {
+                    clean.to_string()
+                } else {
                     match clean.strip_prefix(&format!("{}/", dir_path)) {
                         Some(r) => r.to_string(),
                         None => continue,
                     }
                 };
+
                 let parts: Vec<&str> = relative.split('/').collect();
-                if parts.len() == 1 {
-                    // Direct file child
+                if parts.len() == 1 && !parts[0].is_empty() {
                     nodes.push(SchematicNode {
                         id: format!("file:{}", fid), node_type: "file".into(),
                         label: parts[0].to_string(), parent_id: Some(node_id.to_string()),
@@ -533,7 +554,6 @@ impl SchematicRepo {
                         chapter_id: None, chapter_title: None, difficulty: None, progress: None,
                     });
                 } else if parts.len() > 1 {
-                    // Subdirectory
                     let sub_dir = parts[0];
                     let sub_dir_path = if dir_path == "." { sub_dir.to_string() } else { format!("{}/{}", dir_path, sub_dir) };
                     if !seen_dirs.contains_key(&sub_dir_path) {
@@ -714,4 +734,19 @@ impl SchematicRepo {
 
 fn db_err(e: rusqlite::Error) -> CodeilusError {
     CodeilusError::Database(Box::new(e))
+}
+
+/// Find the longest common directory prefix among a set of file paths.
+fn find_common_dir_prefix(paths: &[&str]) -> String {
+    if paths.is_empty() { return String::new(); }
+    let first = paths[0];
+    let mut prefix_len = 0;
+    for (i, ch) in first.char_indices() {
+        if paths.iter().all(|p| p.as_bytes().get(i) == Some(&(ch as u8))) {
+            if ch == '/' { prefix_len = i + 1; }
+        } else {
+            break;
+        }
+    }
+    first[..prefix_len].to_string()
 }

@@ -96,24 +96,32 @@ async fn get_file_source(
         message: "No repository has been analyzed".to_string(),
     })?;
 
-    // Resolve the file path relative to repo root
+    // Resolve the file path — handle both relative and absolute paths
     let clean_path = file.path.strip_prefix("./").unwrap_or(&file.path);
-    let full_path = repo_root.join(clean_path);
+    let full_path = if std::path::Path::new(clean_path).is_absolute() {
+        std::path::PathBuf::from(clean_path)
+    } else {
+        repo_root.join(clean_path)
+    };
 
-    // Canonicalize and verify the path stays within repo root (prevent path traversal)
+    // Canonicalize and verify the path exists and is safe
     let canonical = full_path.canonicalize().map_err(|e| ApiError {
         status: StatusCode::NOT_FOUND,
         message: format!("Could not resolve file path: {}", e),
     })?;
-    let canonical_root = repo_root.canonicalize().map_err(|e| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: format!("Could not resolve repo root: {}", e),
-    })?;
-    if !canonical.starts_with(&canonical_root) {
-        return Err(ApiError {
-            status: StatusCode::FORBIDDEN,
-            message: "Path traversal detected".to_string(),
-        });
+
+    // For relative paths, verify within repo root (prevent traversal)
+    if !std::path::Path::new(clean_path).is_absolute() {
+        let canonical_root = repo_root.canonicalize().map_err(|e| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: format!("Could not resolve repo root: {}", e),
+        })?;
+        if !canonical.starts_with(&canonical_root) {
+            return Err(ApiError {
+                status: StatusCode::FORBIDDEN,
+                message: "Path traversal detected".to_string(),
+            });
+        }
     }
 
     let content = std::fs::read_to_string(&canonical).map_err(|e| {
