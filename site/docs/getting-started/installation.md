@@ -83,5 +83,6 @@ claude --version
 | `CODEILUS_DB_PATH` | `~/.codeilus/codeilus.db` | SQLite database location |
 | `CODEILUS_SKIP_LLM` | `false` | Skip all LLM calls (use placeholders) |
 | `CODEILUS_LLM_PROVIDER` | auto-detect | Force LLM provider: `claude_code` or `anthropic_api` |
+| `CODEILUS_USE_MAX_SUBSCRIPTION` | `false` | Route Claude CLI through Max subscription (no API credits) |
 | `CODEILUS_CLONE_DIR` | `/tmp/codeilus-clones` | Directory for harvested repo clones |
 | `RUST_LOG` | `info` | Log level (`debug`, `info`, `warn`, `error`) |

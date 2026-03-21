@@ -3,7 +3,64 @@
 All notable changes to Codeilus are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.0] - Unreleased
+## [0.2.0] - 2026-03-21
+
+### Added
+
+#### Schematic Explorer (`/explore/schematic`)
+- Unified tree + graph viewer with mode toggle on a single page
+- Tree mode: expandable directory hierarchy with lazy loading via `/api/v1/schematic`
+- Graph mode: community grid overview with drill-down into symbol layouts
+- 6 interaction components: Tooltip, DetailTabs, SourcePopup, ContextMenu, KeyboardOverlay, Minimap
+- Hover: tooltips with node metadata, edge highlighting, ghost-node dimming
+- Single click: expand/collapse directories, open 5-tab detail panel (Overview, Source, Relations, Learn, Notes)
+- Double click: deep dive (file → tree view, symbol → source popup, community → learning chapter)
+- Right-click context menu per node type (View source, Ask AI, Add annotation, Focus, Hide, etc.)
+- Keyboard shortcuts: 1/2 modes, F fit-to-view, ? help overlay, Esc close
+- Legend panel with edge colors, node types, community swatches, interaction reference
+- Minimap with viewport indicator and click-to-pan
+- Auto fit-to-view on load, mode switch, and community drill-down
+- Search highlighting across all loaded nodes
+
+#### Schematic Backend API
+- `GET /api/v1/schematic` — depth-limited tree with community + learning enrichment
+- `GET /api/v1/schematic/expand` — lazy-load children of a directory or file
+- `GET /api/v1/schematic/detail` — narrative, callers/callees, chapter link for any node
+- `SchematicRepo` with community-filtered symbols/edges, dominant community for directories
+- Common-prefix path normalization (works with relative and absolute file paths)
+
+#### Theme System
+- Light/dark mode toggle with `localStorage` persistence
+- CSS variable architecture: `:root:not(.light)` for dark, `.light` for light
+- Inline `<script>` in `app.html` prevents flash of wrong theme
+- 3D graph canvas background reacts to theme toggle in real-time
+- Shiki syntax highlighting switches between `github-dark` and `github-light`
+- `theme-change` custom event for components that need to react to toggles
+
+#### E2E Tests
+- 31 Playwright tests for schematic explorer (API, tree mode, graph mode, interactions, TDD behaviors)
+- Tests are codebase-agnostic (work with any analyzed repository)
+
+#### LLM
+- Max subscription routing via `CODEILUS_USE_MAX_SUBSCRIPTION=true` env var
+- Sets `CLAUDE_CODE_ENTRYPOINT=sdk-max`, `CLAUDE_USE_SUBSCRIPTION=true`, `CLAUDE_BYPASS_BALANCE_CHECK=true`
+
+### Fixed
+- Source code endpoint handles absolute file paths (was returning "path traversal" error)
+- Narrative `("name")` prefix stripped from module summaries in all rendering locations
+- 3D graph: tooltips, loading screens, community hover cards use CSS variables (light mode support)
+- Layered layout wraps rows at 1200px (prevents single-line overflow for large communities)
+- Community drill-down filters symbols and edges by community (was loading all 5000+ symbols)
+- `$derived` vs `$derived.by` fix in SchematicContextMenu
+
+### Changed
+- Explore hub shows "Schematic Explorer" card (replaces separate Tree/Graph Schematic cards)
+- Grid layout for community overview (was single horizontal row)
+- `computeFitToView` utility in layout engine for viewport calculations
+
+---
+
+## [0.1.0] - 2026-03-17
 
 ### Added
 
