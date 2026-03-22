@@ -56,7 +56,7 @@
   async function getHighlighter(): Promise<Highlighter> {
     if (highlighter) return highlighter;
     highlighter = await createHighlighter({
-      themes: ['github-dark'],
+      themes: ['github-dark', 'github-light'],
       langs: [],
     });
     return highlighter;
@@ -82,7 +82,7 @@
       }
       highlightedHtml = hl.codeToHtml(code, {
         lang,
-        theme: 'github-dark',
+        theme: document.documentElement.classList.contains('light') ? 'github-light' : 'github-dark',
       });
     } catch {
       highlightedHtml = '';
@@ -212,6 +212,13 @@
   if (typeof window !== 'undefined') {
     // Pre-init highlighter
     getHighlighter();
+
+    // Re-highlight when theme changes
+    window.addEventListener('theme-change', () => {
+      if (sourceData && sourceData.lines.length > 0 && selectedFile?.language) {
+        highlightSource(sourceData.lines, selectedFile.language);
+      }
+    });
 
     fetchFiles().then((data) => {
       files = data;

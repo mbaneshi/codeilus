@@ -66,6 +66,15 @@
         .severity-warning { border-left: 3px solid #d29922; }
         .severity-info { border-left: 3px solid #58a6ff; }
 
+        /* Rendered markdown in cards */
+        .card h2, .card h3 { border: none; margin-top: 1rem; }
+        .card h2:first-child, .card h3:first-child { margin-top: 0; }
+        .card ul, .card ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+        .card li { margin-bottom: 0.25rem; }
+        .card p { margin-bottom: 0.5rem; }
+        .card strong { color: #f0f6fc; }
+        .card blockquote { border-left: 3px solid #30363d; padding-left: 0.75rem; color: #8b949e; margin: 0.5rem 0; }
+
         /* Mermaid */
         .mermaid { background: #161b22; padding: 1rem; border-radius: 6px; text-align: center; overflow-x: auto; }
 
@@ -271,12 +280,44 @@
     <!-- Inline data for programmatic access -->
     <script id="codeilus-data" type="application/json">{{ data_json }}</script>
 
+    <!-- Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+    <script>
+    (function() {
+        // Wait for marked to load, then render markdown in narrative cards
+        function renderMarkdown() {
+            if (typeof marked === 'undefined') return;
+            var sections = ['#overview .card', '#how-it-works .card', '#how-to-extend .card',
+                            '#how-to-contribute .card', '#why-trending .card'];
+            sections.forEach(function(sel) {
+                var el = document.querySelector(sel);
+                if (el && el.textContent.trim()) {
+                    var raw = el.textContent;
+                    // Only render if it looks like markdown (has ## or ** or - )
+                    if (/[#*\-`]/.test(raw)) {
+                        el.innerHTML = marked.parse(raw);
+                    }
+                }
+            });
+            // Also render community summaries
+            document.querySelectorAll('.content .card p').forEach(function(el) {
+                var raw = el.textContent;
+                if (/[#*\-`]/.test(raw)) {
+                    el.innerHTML = marked.parse(raw);
+                }
+            });
+        }
+        // Try immediately, or wait for script load
+        if (typeof marked !== 'undefined') { renderMarkdown(); }
+        else { document.querySelector('script[src*="marked"]').onload = renderMarkdown; }
+    })();
+    </script>
+
     <!-- Mermaid initialization -->
     <script>
     (function() {
         var mermaidEls = document.querySelectorAll('.mermaid');
         if (mermaidEls.length === 0) return;
-        // Load mermaid from CDN as fallback
         var s = document.createElement('script');
         s.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
         s.onload = function() {

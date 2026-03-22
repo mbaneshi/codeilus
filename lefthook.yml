@@ -1,0 +1,33 @@
+# lefthook.yml — Git hooks for codeilus
+# Install: brew install lefthook && lefthook install
+
+pre-commit:
+  parallel: true
+  commands:
+    cargo-clippy:
+      glob: "*.rs"
+      run: cargo clippy --workspace -- -D warnings
+    cargo-test:
+      glob: "*.rs"
+      run: cargo test --workspace --lib -- --quiet
+    frontend-check:
+      glob: "frontend/**/*.{ts,svelte}"
+      root: "frontend/"
+      run: pnpm run check
+
+pre-push:
+  parallel: false
+  commands:
+    cargo-full-test:
+      run: cargo test --workspace
+    frontend-build:
+      root: "frontend/"
+      run: pnpm run build
+    e2e-tests:
+      root: "frontend/"
+      run: |
+        # E2E requires the backend running on :4174
+        # Skip if server not available (CI handles this)
+        curl -sf http://localhost:4174/api/health > /dev/null 2>&1 && \
+          pnpm exec playwright test || \
+          echo "⚠ Skipping E2E — backend not running on :4174. CI will run these."

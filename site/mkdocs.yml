@@ -71,6 +71,7 @@ nav:
       - How It Works: guide/how-it-works.md
       - Learning Path: guide/learning-path.md
       - Graph Explorer: guide/graph-explorer.md
+      - Schematic Explorer: guide/schematic-explorer.md
       - Ask AI: guide/ask-ai.md
       - Static Export: guide/static-export.md
   - Architecture:

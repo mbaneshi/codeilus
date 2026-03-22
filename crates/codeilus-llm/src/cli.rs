@@ -38,17 +38,34 @@ fn is_garbage_response(text: &str) -> bool {
 /// Claude CLI subprocess wrapper.
 pub struct ClaudeCli {
     timeout_secs: u64,
+    use_max_subscription: bool,
 }
 
 impl ClaudeCli {
     /// Create a new ClaudeCli with default 180-second timeout.
     pub fn new() -> Self {
-        Self { timeout_secs: 180 }
+        Self {
+            timeout_secs: 180,
+            use_max_subscription: std::env::var("CODEILUS_USE_MAX_SUBSCRIPTION")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
+        }
+    }
+
+    /// Create with Max subscription routing enabled.
+    pub fn with_max_subscription(mut self) -> Self {
+        self.use_max_subscription = true;
+        self
     }
 
     /// Create a new ClaudeCli with a custom timeout.
     pub fn with_timeout(timeout_secs: u64) -> Self {
-        Self { timeout_secs }
+        Self {
+            timeout_secs,
+            use_max_subscription: std::env::var("CODEILUS_USE_MAX_SUBSCRIPTION")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
+        }
     }
 
     /// Check if the `claude` CLI is available on the system.
@@ -129,11 +146,16 @@ impl ClaudeCli {
             cmd.arg("--system-prompt").arg(system);
         }
 
-        // Unset CLAUDECODE to allow nested invocations, and ANTHROPIC_API_KEY
-        // so the CLI uses the user's claude.ai subscription instead of a
-        // potentially rate-limited/exhausted API key.
+        // Unset CLAUDECODE to allow nested invocations.
         cmd.env_remove("CLAUDECODE");
-        cmd.env_remove("ANTHROPIC_API_KEY");
+        if self.use_max_subscription {
+            cmd.env("CLAUDE_CODE_ENTRYPOINT", "sdk-max");
+            cmd.env("CLAUDE_USE_SUBSCRIPTION", "true");
+            cmd.env("CLAUDE_BYPASS_BALANCE_CHECK", "true");
+            cmd.env_remove("ANTHROPIC_API_KEY");
+        } else {
+            cmd.env_remove("ANTHROPIC_API_KEY");
+        }
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
@@ -211,11 +233,16 @@ impl ClaudeCli {
             cmd.arg("--system-prompt").arg(system);
         }
 
-        // Unset CLAUDECODE to allow nested invocations, and ANTHROPIC_API_KEY
-        // so the CLI uses the user's claude.ai subscription instead of a
-        // potentially rate-limited/exhausted API key.
+        // Unset CLAUDECODE to allow nested invocations.
         cmd.env_remove("CLAUDECODE");
-        cmd.env_remove("ANTHROPIC_API_KEY");
+        if self.use_max_subscription {
+            cmd.env("CLAUDE_CODE_ENTRYPOINT", "sdk-max");
+            cmd.env("CLAUDE_USE_SUBSCRIPTION", "true");
+            cmd.env("CLAUDE_BYPASS_BALANCE_CHECK", "true");
+            cmd.env_remove("ANTHROPIC_API_KEY");
+        } else {
+            cmd.env_remove("ANTHROPIC_API_KEY");
+        }
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 

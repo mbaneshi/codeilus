@@ -1,0 +1,75 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - link "Codeilus Learn any codebase" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e9]:
+          - heading "Codeilus" [level=1] [ref=e10]
+          - paragraph [ref=e11]: Learn any codebase
+    - generic [ref=e12]:
+      - link "Home" [ref=e13] [cursor=pointer]:
+        - /url: /
+        - img [ref=e14]
+        - generic [ref=e15]: Home
+      - link "Learn" [ref=e16] [cursor=pointer]:
+        - /url: /learn
+        - img [ref=e17]
+        - generic [ref=e18]: Learn
+      - link "Explore" [ref=e19] [cursor=pointer]:
+        - /url: /explore
+        - img [ref=e20]
+        - generic [ref=e21]: Explore
+      - link "Ask" [ref=e22] [cursor=pointer]:
+        - /url: /ask
+        - img [ref=e23]
+        - generic [ref=e24]: Ask
+      - generic [ref=e26]:
+        - img [ref=e27]
+        - textbox "Search symbols..." [ref=e28]
+    - generic [ref=e29]:
+      - button "Light mode" [ref=e30] [cursor=pointer]:
+        - img [ref=e31]
+        - generic [ref=e32]: Light mode
+      - link "Settings" [ref=e33] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e34]
+        - generic [ref=e35]: Settings
+      - generic [ref=e36]:
+        - generic [ref=e39]: Connected
+        - generic [ref=e42]: "LLM: Available"
+      - generic [ref=e43]: Codeilus v0.1.0
+  - main [ref=e44]:
+    - generic [ref=e45]:
+      - navigation [ref=e46]:
+        - link "Home" [ref=e47] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e48]: /
+        - link "Explore" [ref=e49] [cursor=pointer]:
+          - /url: /explore
+        - generic [ref=e50]: /
+        - generic [ref=e51]: Tree
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e54]:
+            - generic [ref=e55]:
+              - link [ref=e56] [cursor=pointer]:
+                - /url: /explore
+                - img [ref=e57]
+              - img [ref=e59]
+              - heading "Files" [level=1] [ref=e60]
+              - generic [ref=e61]: "50"
+            - generic [ref=e62]:
+              - img [ref=e63]
+              - textbox "Filter files..." [ref=e64]
+          - button "▸ /" [ref=e67] [cursor=pointer]:
+            - generic [ref=e68]: ▸
+            - generic [ref=e69]: /
+        - generic [ref=e71]:
+          - img [ref=e73]
+          - paragraph [ref=e74]: Select a file
+          - paragraph [ref=e75]: Choose a file from the tree to view its source code
+```

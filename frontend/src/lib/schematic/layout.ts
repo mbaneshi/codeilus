@@ -131,25 +131,33 @@ export function layoutLayered(input: LayeredInput): { nodes: LayoutNode[]; edges
     layers.push(layer);
   }
 
-  // Position nodes
+  // Position nodes — wrap long layers into multiple sub-rows
   const nodeMap = new Map(inputNodes.map(n => [n.id, n]));
   const layoutNodes: LayoutNode[] = [];
   let maxWidth = 0;
+  const MAX_ROW_W = 1200; // Max width before wrapping to next sub-row
+  let currentY = 20;
 
   for (let li = 0; li < layers.length; li++) {
     const layer = layers[li];
-    const y = 20 + li * LAYER_V_GAP;
     let x = 20;
+    let subRowStart = currentY;
     for (const id of layer) {
       const n = nodeMap.get(id)!;
       const w = measureLabel(n.label, 130);
-      layoutNodes.push({ id, label: n.label, width: w, height: NODE_H, x, y, data: n.data });
+      // Wrap to next sub-row if too wide
+      if (x + w > MAX_ROW_W && x > 20) {
+        currentY += NODE_H + NODE_PAD_Y;
+        x = 20;
+      }
+      layoutNodes.push({ id, label: n.label, width: w, height: NODE_H, x, y: currentY, data: n.data });
       x += w + NODE_H_GAP;
+      maxWidth = Math.max(maxWidth, x);
     }
-    maxWidth = Math.max(maxWidth, x);
+    currentY += NODE_H + LAYER_V_GAP;
   }
 
-  const maxY = Math.max(...layoutNodes.map(n => n.y + n.height));
+  const maxY = Math.max(...layoutNodes.map(n => n.y + n.height), currentY);
   const layoutEdges: LayoutEdge[] = inputEdges.map((e, i) => ({
     id: `e-${i}`,
     from: e.from,

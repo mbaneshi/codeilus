@@ -702,7 +702,7 @@
       const fg = ForceGraph3D()(containerEl!)
         .width(w)
         .height(h)
-        .backgroundColor('#0a0a1a')
+        .backgroundColor(document.documentElement.classList.contains('light') ? '#f8f9fb' : '#0a0a1a')
         .graphData(gData)
         .nodeLabel((node: any) => {
           const ec = edgeCounts.get(node.id) ?? 0;
@@ -714,7 +714,7 @@
           const progressBadge = progressStatus === 'completed' ? '<span style="font-size:9px;color:#34d399">&#10003; learned</span>' : progressStatus === 'in-progress' ? '<span style="font-size:9px;color:#fbbf24">&#9679; in progress</span>' : '';
           const hasNotes = annotatedNodeIds.has(node.id);
           const notesBadge = hasNotes ? '<span style="font-size:9px;color:#a78bfa">&#9998; has notes</span>' : '';
-          return `<div style="font-family:ui-monospace,monospace;font-size:12px;padding:8px 12px;background:rgba(10,10,26,0.95);border:1px solid rgba(255,255,255,0.15);border-radius:8px;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+          return `<div style="font-family:ui-monospace,monospace;font-size:12px;padding:8px 12px;background:var(--surface-1);border:1px solid var(--c-border);border-radius:8px;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
             <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:#f1f5f9">${node.name}</div>
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
               <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${getColor(node.community_id)}22;color:${getColor(node.community_id)};border:1px solid ${getColor(node.community_id)}44">${node.kind}</span>
@@ -746,7 +746,7 @@
           const edgeInfo = EDGE_COLORS[link.kind] ?? { label: link.kind, color: '#4b5563' };
           const confidence = Math.round((link.confidence ?? 1) * 100);
           const confColor = confidence >= 80 ? '#34d399' : confidence >= 50 ? '#fbbf24' : '#f87171';
-          return `<div style="font-family:ui-monospace,monospace;font-size:11px;padding:6px 10px;background:rgba(10,10,26,0.95);border:1px solid ${edgeInfo.color}44;border-radius:6px;max-width:320px;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+          return `<div style="font-family:ui-monospace,monospace;font-size:11px;padding:6px 10px;background:var(--surface-1);border:1px solid ${edgeInfo.color}44;border-radius:6px;max-width:320px;box-shadow:0 4px 16px rgba(0,0,0,0.3)">
             <div style="margin-bottom:3px"><span style="color:${edgeInfo.color};font-weight:600">${edgeInfo.label}</span></div>
             <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">${sourceName} <span style="color:${edgeInfo.color}">&rarr;</span> ${targetName}</div>
             <div style="font-size:9px"><span style="color:${confColor}">${confidence}%</span> <span style="color:#475569">confidence</span></div>
@@ -902,6 +902,13 @@
 
       graph3d = fg;
 
+      // Listen for theme changes to update canvas background
+      const onThemeChange = (e: Event) => {
+        const theme = (e as CustomEvent).detail;
+        fg.backgroundColor(theme === 'light' ? '#f8f9fb' : '#0a0a1a');
+      };
+      window.addEventListener('theme-change', onThemeChange);
+
       const observer = new ResizeObserver(() => {
         if (containerEl) {
           fg.width(containerEl.clientWidth);
@@ -909,7 +916,7 @@
         }
       });
       observer.observe(containerEl!);
-      return () => observer.disconnect();
+      return () => { observer.disconnect(); window.removeEventListener('theme-change', onThemeChange); };
     }).catch(err => {
       console.error('[graph] Failed to load 3d-force-graph:', err);
     });
@@ -958,7 +965,7 @@
 <div class="graph-page">
   <div class="graph-canvas" bind:this={containerEl}></div>
   {#if loading}
-    <div class="absolute inset-0 flex items-center justify-center z-30 bg-[#0a0a1a]">
+    <div class="absolute inset-0 flex items-center justify-center z-30 bg-[var(--surface-0)]">
       <div class="text-center">
         <div class="w-12 h-12 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin mx-auto mb-4"></div>
         <p class="text-gray-400 text-lg font-medium">Building knowledge graph...</p>
@@ -966,14 +973,14 @@
       </div>
     </div>
   {:else if error}
-    <div class="absolute inset-0 flex items-center justify-center z-30 bg-[#0a0a1a]">
+    <div class="absolute inset-0 flex items-center justify-center z-30 bg-[var(--surface-0)]">
       <div class="text-center max-w-sm">
         <p class="text-red-400 text-lg mb-2">Failed to load graph</p>
         <p class="text-gray-500 text-sm">{error}</p>
       </div>
     </div>
   {:else if allNodes.length === 0}
-    <div class="absolute inset-0 flex items-center justify-center z-30 bg-[#0a0a1a]">
+    <div class="absolute inset-0 flex items-center justify-center z-30 bg-[var(--surface-0)]">
       <div class="text-center">
         <p class="text-gray-400 text-lg mb-2">No graph data</p>
         <p class="text-gray-500">Run <code class="text-indigo-400 font-mono">codeilus analyze ./repo</code> first</p>
@@ -1391,7 +1398,14 @@
           {/if}
 
           {#if hoveredCommunityNarrative}
-            <p class="community-card-narrative">{hoveredCommunityNarrative.slice(0, 200)}{hoveredCommunityNarrative.length > 200 ? '...' : ''}</p>
+            {@const cleanNarr = hoveredCommunityNarrative
+              .replace(/^\s*\("[^"]*"\)\s*\n?/, '')
+              .replace(/#{1,6}\s*/g, '')
+              .replace(/\*\*/g, '')
+              .replace(/`([^`]+)`/g, '$1')
+              .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+              .trim()}
+            <p class="community-card-narrative">{cleanNarr.slice(0, 200)}{cleanNarr.length > 200 ? '...' : ''}</p>
           {/if}
 
           <div class="community-card-actions">
@@ -1524,7 +1538,7 @@
                 AI Explanation
               </h3>
               <div class="narrative-body">
-                <Markdown content={nodeNarrative} />
+                <Markdown content={nodeNarrative.replace(/^\s*\("[^"]*"\)\s*\n?/, '')} />
               </div>
             </div>
           {/if}
@@ -1745,7 +1759,7 @@
           </div>
         {:else if tourNarrative}
           <div class="tour-narrative">
-            <Markdown content={tourNarrative} />
+            <Markdown content={tourNarrative.replace(/^\s*\("[^"]*"\)\s*\n?/, '')} />
           </div>
         {/if}
 
@@ -1827,7 +1841,7 @@
       {#if learnModalChapter.narrative}
         <div class="mb-4 bg-[var(--surface-2)] rounded-lg p-4">
           <h3 class="text-xs font-semibold text-[var(--c-text-muted)] uppercase tracking-wider mb-2">Module Summary</h3>
-          <Markdown content={learnModalChapter.narrative} />
+          <Markdown content={(learnModalChapter.narrative || '').replace(/^\s*\("[^"]*"\)\s*\n?/, '')} />
         </div>
       {/if}
 
@@ -1853,7 +1867,7 @@
 
   .graph-page {
     @apply relative w-full h-full overflow-hidden;
-    background: #0a0a1a;
+    background: var(--surface-0);
   }
 
   .graph-canvas {

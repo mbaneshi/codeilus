@@ -133,11 +133,14 @@
     if (selectedCommunity) {
       const symNodes = nodes.filter(n => n.type === 'symbol' && n.community_id === selectedCommunity)
         .map(n => ({ id: n.id, label: n.label, data: { ...n } as Record<string, unknown> }));
+      const symIdSet = new Set(symNodes.map(n => n.id));
       const symEdges = allEdges
-        .filter(e => symNodes.some(n => n.id === e.source) && symNodes.some(n => n.id === e.target))
+        .filter(e => symIdSet.has(e.source) && symIdSet.has(e.target))
         .map(e => ({ from: e.source, to: e.target, kind: e.type, label: e.type.toLowerCase() }));
       const r = layoutLayered({ nodes: symNodes, edges: symEdges });
       layoutNodes = r.nodes; layoutEdges = r.edges; canvasW = r.width; canvasH = r.height;
+      // Auto fit after community drill-down
+      requestAnimationFrame(() => fitToView());
       return;
     }
     const commNodes = communities.map(c => ({
@@ -146,6 +149,7 @@
     }));
     const r = layoutLayered({ nodes: commNodes, edges: [] });
     layoutNodes = r.nodes; layoutEdges = r.edges; canvasW = r.width; canvasH = r.height;
+    requestAnimationFrame(() => fitToView());
   }
 
   // ── Actions ──
@@ -351,6 +355,7 @@
     expandedSet = new Set(['dir:.']);
     rebuildLayout();
     loading = false;
+    requestAnimationFrame(() => fitToView());
   });
 </script>
 
