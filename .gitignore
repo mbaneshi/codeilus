@@ -19,3 +19,5 @@ frontend/test-results/
 
 # OS
 .DS_Store
+playwright-report/
+test-results/

@@ -428,8 +428,8 @@ impl SchematicRepo {
                     let parts: Vec<&str> = clean.split('/').collect();
                     // Attribute to every ancestor directory
                     let mut dir_path = ".".to_string();
-                    for i in 0..parts.len() - 1 {
-                        dir_path = if dir_path == "." { parts[i].to_string() } else { format!("{}/{}", dir_path, parts[i]) };
+                    for part in parts.iter().take(parts.len() - 1) {
+                        dir_path = if dir_path == "." { (*part).to_string() } else { format!("{}/{}", dir_path, part) };
                         let dir_id = format!("dir:{}", dir_path);
                         *dir_community_counts.entry(dir_id).or_default().entry(comm_id).or_default() += 1;
                     }
