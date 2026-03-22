@@ -18,7 +18,8 @@
   let totalSloc = $derived(files.reduce((sum, f) => sum + f.sloc, 0));
   let languageCount = $derived(new Set(files.map((f) => f.language).filter(Boolean)).size);
   let topLanguages = $derived.by(() => {
-    const counts = new Map<string, number>();
+    // @ts-ignore
+    const counts = new Map();
     for (const f of files) {
       const lang = f.language ?? 'unknown';
       counts.set(lang, (counts.get(lang) ?? 0) + f.sloc);

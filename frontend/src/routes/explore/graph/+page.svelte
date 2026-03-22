@@ -699,6 +699,7 @@
       const w = containerEl!.clientWidth || window.innerWidth - 264;
       const h = containerEl!.clientHeight || window.innerHeight;
 
+      // @ts-ignore - ForceGraph3D factory pattern
       const fg = ForceGraph3D()(containerEl!)
         .width(w)
         .height(h)
