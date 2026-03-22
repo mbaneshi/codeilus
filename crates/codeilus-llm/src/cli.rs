@@ -1,10 +1,13 @@
 //! Claude CLI subprocess management.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use codeilus_core::error::{CodeilusError, CodeilusResult};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tracing::{debug, warn};
+use tokio::sync::Semaphore;
+use tracing::{debug, info, warn};
 
 use crate::provider::LlmProvider;
 use crate::stream_parser::{is_message_stop, parse_stream_line, StreamAccumulator};
@@ -35,20 +38,50 @@ fn is_garbage_response(text: &str) -> bool {
     GARBAGE_PHRASES.iter().any(|phrase| text.contains(phrase))
 }
 
+/// Default max concurrent claude processes.
+const DEFAULT_MAX_CONCURRENT: usize = 4;
+
 /// Claude CLI subprocess wrapper.
+///
+/// By default, routes through the Claude Max subscription (undocumented env vars
+/// reverse-engineered from `claude_max` Python package). Set `CODEILUS_USE_API_KEY=1`
+/// with `ANTHROPIC_API_KEY` to use API credits instead.
 pub struct ClaudeCli {
     timeout_secs: u64,
+    use_max_subscription: bool,
+    semaphore: Arc<Semaphore>,
 }
 
 impl ClaudeCli {
     /// Create a new ClaudeCli with default 180-second timeout.
+    ///
+    /// Max subscription is ON by default. Set `CODEILUS_USE_API_KEY=1` to use API credits.
     pub fn new() -> Self {
-        Self { timeout_secs: 180 }
+        let use_api_key = std::env::var("CODEILUS_USE_API_KEY")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let max_concurrent = std::env::var("CODEILUS_MAX_CONCURRENT")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(DEFAULT_MAX_CONCURRENT);
+        let use_max = !use_api_key;
+        info!(
+            use_max_subscription = use_max,
+            max_concurrent,
+            "ClaudeCli initialized"
+        );
+        Self {
+            timeout_secs: 180,
+            use_max_subscription: use_max,
+            semaphore: Arc::new(Semaphore::new(max_concurrent)),
+        }
     }
 
     /// Create a new ClaudeCli with a custom timeout.
     pub fn with_timeout(timeout_secs: u64) -> Self {
-        Self { timeout_secs }
+        let mut cli = Self::new();
+        cli.timeout_secs = timeout_secs;
+        cli
     }
 
     /// Check if the `claude` CLI is available on the system.
@@ -116,12 +149,12 @@ impl ClaudeCli {
         }
     }
 
-    /// Single attempt at running a prompt (no retry).
-    async fn prompt_once(&self, request: &LlmRequest) -> CodeilusResult<LlmResponse> {
-        let mut cmd = Command::new("claude");
+    /// Configure a Command with the standard claude CLI args and env vars.
+    fn configure_command(&self, cmd: &mut Command, request: &LlmRequest) {
         cmd.arg("--output-format")
             .arg("stream-json")
             .arg("--verbose")
+            .arg("--dangerously-skip-permissions")
             .arg("--print")
             .arg(&request.prompt);
 
@@ -129,15 +162,40 @@ impl ClaudeCli {
             cmd.arg("--system-prompt").arg(system);
         }
 
-        // Unset CLAUDECODE to allow nested invocations, and ANTHROPIC_API_KEY
-        // so the CLI uses the user's claude.ai subscription instead of a
-        // potentially rate-limited/exhausted API key.
+        // Unset CLAUDECODE to allow nested invocations.
         cmd.env_remove("CLAUDECODE");
-        cmd.env_remove("ANTHROPIC_API_KEY");
+
+        if self.use_max_subscription {
+            // Route through Max subscription (no per-token cost).
+            // These env vars are undocumented — reverse-engineered from claude_max Python package.
+            cmd.env("CLAUDE_CODE_ENTRYPOINT", "sdk-max");
+            cmd.env("CLAUDE_USE_SUBSCRIPTION", "true");
+            cmd.env("CLAUDE_BYPASS_BALANCE_CHECK", "true");
+            cmd.env_remove("ANTHROPIC_API_KEY");
+        } else {
+            // API key mode — let ANTHROPIC_API_KEY pass through from environment.
+        }
+
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
+    }
 
-        debug!(prompt_len = request.prompt.len(), "spawning claude CLI");
+    /// Single attempt at running a prompt (no retry).
+    async fn prompt_once(&self, request: &LlmRequest) -> CodeilusResult<LlmResponse> {
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| CodeilusError::Llm("Concurrency semaphore closed".to_string()))?;
+
+        let mut cmd = Command::new("claude");
+        self.configure_command(&mut cmd, request);
+
+        debug!(
+            prompt_len = request.prompt.len(),
+            use_max = self.use_max_subscription,
+            "spawning claude CLI"
+        );
 
         let mut child = cmd
             .spawn()
@@ -200,24 +258,15 @@ impl ClaudeCli {
             ));
         }
 
+        let permit = self
+            .semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| CodeilusError::Llm("Concurrency semaphore closed".to_string()))?;
+
         let mut cmd = Command::new("claude");
-        cmd.arg("--output-format")
-            .arg("stream-json")
-            .arg("--verbose")
-            .arg("--print")
-            .arg(&request.prompt);
-
-        if let Some(system) = &request.system {
-            cmd.arg("--system-prompt").arg(system);
-        }
-
-        // Unset CLAUDECODE to allow nested invocations, and ANTHROPIC_API_KEY
-        // so the CLI uses the user's claude.ai subscription instead of a
-        // potentially rate-limited/exhausted API key.
-        cmd.env_remove("CLAUDECODE");
-        cmd.env_remove("ANTHROPIC_API_KEY");
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
+        self.configure_command(&mut cmd, request);
 
         let mut child = cmd
             .spawn()
@@ -232,6 +281,7 @@ impl ClaudeCli {
         let timeout_secs = self.timeout_secs;
 
         tokio::spawn(async move {
+            let _permit = permit; // held until task completes
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             let mut accumulator = StreamAccumulator::new();
