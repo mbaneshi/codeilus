@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
   import {
     fetchGraph, fetchCommunityGraph, fetchCommunities, fetchFiles,
     fetchNarrativeByTarget, fetchFileSource,
@@ -8,14 +9,26 @@
     GraphNode, GraphEdge, Community, CommunityGraphNode, CommunityGraphEdge,
     FileRow, SymbolRow, NarrativeResponse, SourceResponse,
   } from '$lib/types';
-  import type { SchematicNode, SchematicEdge } from '$lib/schematic/types';
-  import { computeLayout, type LayoutResult } from '$lib/schematic/elk-layout';
+  import type { SchematicNode, SchematicEdge, LayoutResult } from '$lib/schematic/types';
+  import { computeLayout } from '$lib/schematic/elk-layout';
+  let ELK: any;
+
+  async function loadElk(): Promise<any> {
+    await new Promise<void>((resolve, reject) => {
+      if ((window as any).ELK) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = '/elk.bundled.js';
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Failed to load ELK'));
+      document.head.appendChild(s);
+    });
+    return (window as any).ELK;
+  }
   import { edgePathD, edgeMidpoint } from '$lib/schematic/edge-path';
   import SchematicCanvas from '$lib/schematic/SchematicCanvas.svelte';
   import SchematicSearch from '$lib/schematic/SchematicSearch.svelte';
   import SchematicModal from '$lib/schematic/SchematicModal.svelte';
   import { LoadingSpinner } from '$lib/components';
-  import { ArrowLeft, ChevronRight, Network, Layers, FileCode } from 'lucide-svelte';
 
   const COMMUNITY_COLORS = [
     '#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6',
@@ -100,7 +113,7 @@
 
     flatNodes = nodes;
     visibleEdges = edges;
-    layout = await computeLayout(nodes, edges, { algorithm: 'layered', direction: 'RIGHT', nodeSpacing: 30, layerSpacing: 80 });
+    layout = await computeLayout(nodes, edges, { algorithm: 'layered', direction: 'RIGHT', nodeSpacing: 30, layerSpacing: 80 }, ELK);
     requestAnimationFrame(() => canvasRef?.fitToView(layout!.width, layout!.height));
   }
 
@@ -137,7 +150,7 @@
 
     flatNodes = nodes;
     visibleEdges = edges;
-    layout = await computeLayout(nodes, edges, { algorithm: 'layered', direction: 'DOWN', nodeSpacing: 20, layerSpacing: 50 });
+    layout = await computeLayout(nodes, edges, { algorithm: 'layered', direction: 'DOWN', nodeSpacing: 20, layerSpacing: 50 }, ELK);
     loading = false;
     requestAnimationFrame(() => canvasRef?.fitToView(layout!.width, layout!.height));
   }
@@ -180,7 +193,13 @@
     }
   }
 
-  onMount(async () => {
+  onMount(() => {
+    if (!browser) return;
+    queueMicrotask(() => initGraph());
+  });
+
+  async function initGraph() {
+    ELK = await loadElk();
     const [graphData, commGraph, comms, fileList] = await Promise.all([
       fetchGraph(), fetchCommunityGraph(), fetchCommunities(), fetchFiles(),
     ]);
@@ -193,23 +212,23 @@
 
     await showCommunities();
     loading = false;
-  });
+  }
 </script>
 
 <div class="h-full flex flex-col">
   <div class="flex items-center gap-3 px-5 py-3 border-b border-[var(--c-border)] bg-[var(--surface-1)] shrink-0">
     <a href="/explore" class="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--c-text-muted)] hover:text-[var(--c-text-primary)] transition-colors">
-      <ArrowLeft size={16} />
+      <span class="text-sm">&larr;</span>
     </a>
-    <Network size={18} class="text-violet-400" />
+    <span class="text-violet-400 text-lg">&#9672;</span>
     <h1 class="text-base font-semibold">Symbol Graph</h1>
 
     {#if breadcrumb.length > 0}
       {#each breadcrumb as crumb}
-        <ChevronRight size={14} class="text-[var(--c-text-muted)]" />
+        <span class="text-[var(--c-text-muted)] text-xs">&rsaquo;</span>
         <button onclick={crumb.action} class="text-sm text-[var(--c-accent)] hover:underline">{crumb.label}</button>
       {/each}
-      <ChevronRight size={14} class="text-[var(--c-text-muted)]" />
+      <span class="text-[var(--c-text-muted)] text-xs">&rsaquo;</span>
       <span class="text-sm text-[var(--c-text-secondary)]">
         {#if activeCommunityId !== null}
           {communities.find(c => c.id === activeCommunityId)?.label || `Community ${activeCommunityId}`}

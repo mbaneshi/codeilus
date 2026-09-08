@@ -1,15 +1,27 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
   import { fetchFiles, fetchFileSymbols, fetchNarrativeByTarget, fetchFileSource } from '$lib/api';
   import type { FileRow, SymbolRow, SourceResponse, NarrativeResponse } from '$lib/types';
-  import type { SchematicNode, SchematicEdge } from '$lib/schematic/types';
-  import { computeLayout, type LayoutResult } from '$lib/schematic/elk-layout';
+  import type { SchematicNode, SchematicEdge, LayoutResult } from '$lib/schematic/types';
   import { edgePathD } from '$lib/schematic/edge-path';
+  import { computeLayout } from '$lib/schematic/elk-layout';
+
+  async function loadElk(): Promise<any> {
+    await new Promise<void>((resolve, reject) => {
+      if ((window as any).ELK) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = '/elk.bundled.js';
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Failed to load ELK'));
+      document.head.appendChild(s);
+    });
+    return (window as any).ELK;
+  }
   import SchematicCanvas from '$lib/schematic/SchematicCanvas.svelte';
   import SchematicSearch from '$lib/schematic/SchematicSearch.svelte';
   import SchematicModal from '$lib/schematic/SchematicModal.svelte';
   import { LoadingSpinner } from '$lib/components';
-  import { FolderTree, FileCode, ArrowLeft } from 'lucide-svelte';
 
   const LANG_COLORS: Record<string, string> = {
     rust: '#dea584', python: '#3572a5', typescript: '#3178c6', javascript: '#f1e05a',
@@ -130,40 +142,51 @@
     }
   }
 
-  onMount(async () => {
-    const files = await fetchFiles();
-    if (files.length === 0) { loading = false; return; }
-
-    const dirTree = buildDirTree(files);
-    const nodeList: SchematicNode[] = [];
-    const edgeList: SchematicEdge[] = [];
-    nodeIdCounter = 0;
-    dirToSchematic(dirTree, null, nodeList, edgeList);
-    flatNodes = nodeList;
-    edges = edgeList;
-
-    layout = await computeLayout(nodeList, edgeList, {
-      algorithm: 'mrtree',
-      direction: 'RIGHT',
-      nodeSpacing: 15,
-      layerSpacing: 60,
-    });
-
-    loading = false;
-    requestAnimationFrame(() => {
-      if (canvasRef && layout) {
-        canvasRef.fitToView(layout.width, layout.height);
-      }
-    });
+  onMount(() => {
+    if (!browser) return;
+    queueMicrotask(() => init());
   });
+
+  async function init() {
+    try {
+      const ELK = await loadElk();
+      const files = await fetchFiles();
+      if (files.length === 0) { loading = false; return; }
+
+      const dirTree = buildDirTree(files);
+      const nodeList: SchematicNode[] = [];
+      const edgeList: SchematicEdge[] = [];
+      nodeIdCounter = 0;
+      dirToSchematic(dirTree, null, nodeList, edgeList);
+      flatNodes = nodeList;
+      edges = edgeList;
+
+      layout = await computeLayout(nodeList, edgeList, {
+        algorithm: 'mrtree',
+        direction: 'RIGHT',
+        nodeSpacing: 15,
+        layerSpacing: 60,
+      }, ELK);
+
+      loading = false;
+      requestAnimationFrame(() => {
+        if (canvasRef && layout) {
+          canvasRef.fitToView(layout.width, layout.height);
+        }
+      });
+    } catch (e) {
+      console.error('Tree schematic error:', e);
+      loading = false;
+    }
+  }
 </script>
 
 <div class="h-full flex flex-col">
   <div class="flex items-center gap-3 px-5 py-3 border-b border-[var(--c-border)] bg-[var(--surface-1)] shrink-0">
     <a href="/explore" class="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--c-text-muted)] hover:text-[var(--c-text-primary)] transition-colors">
-      <ArrowLeft size={16} />
+      <span class="text-sm">&larr;</span>
     </a>
-    <FolderTree size={18} class="text-emerald-400" />
+    <span class="text-emerald-400 text-lg">&#128450;</span>
     <h1 class="text-base font-semibold">Codebase Tree</h1>
     <span class="text-xs text-[var(--c-text-muted)]">{flatNodes.length} nodes</span>
   </div>
@@ -222,7 +245,7 @@
                 {#if node.metadata.type === 'dir'}
                   <foreignObject width={pos.width} height={pos.height}>
                     <div class="flex items-center gap-2 px-3 h-full" xmlns="http://www.w3.org/1999/xhtml">
-                      <FolderTree size={14} class="text-[var(--c-text-muted)] shrink-0" />
+                      <span class="text-[var(--c-text-muted)] shrink-0 text-xs">&#128193;</span>
                       <span class="text-xs font-medium text-[var(--c-text-secondary)] truncate">{node.label}</span>
                       <span class="text-[10px] text-[var(--c-text-muted)] ml-auto">{node.metadata.fileCount}</span>
                     </div>

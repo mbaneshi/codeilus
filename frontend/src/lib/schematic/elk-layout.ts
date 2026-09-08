@@ -1,7 +1,4 @@
-import ELK from 'elkjs/lib/elk.bundled.js';
 import type { SchematicNode, SchematicEdge, LayoutResult } from './types';
-
-const elk = new ELK();
 
 interface LayoutOptions {
   algorithm?: 'layered' | 'mrtree' | 'force';
@@ -58,6 +55,7 @@ export async function computeLayout(
   nodes: SchematicNode[],
   edges: SchematicEdge[],
   options: LayoutOptions = {},
+  elkConstructor: any,
 ): Promise<LayoutResult> {
   const {
     algorithm = 'layered',
@@ -65,6 +63,8 @@ export async function computeLayout(
     nodeSpacing = 25,
     layerSpacing = 50,
   } = options;
+
+  const elk = new elkConstructor();
 
   const elkGraph = {
     id: 'root',
@@ -91,7 +91,6 @@ export async function computeLayout(
 
   const nodePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
   flattenPositions(laid, 0, 0, nodePositions);
-  // Also add top-level children
   if (laid.children) {
     for (const child of laid.children) {
       if (!nodePositions.has(child.id)) {
@@ -116,7 +115,6 @@ export async function computeLayout(
         }
         edgePositions.set(edge.id, { points: pts });
       } else {
-        // Fallback: connect source center to target center
         const src = nodePositions.get((edge as unknown as { sources: string[] }).sources[0]);
         const tgt = nodePositions.get((edge as unknown as { targets: string[] }).targets[0]);
         if (src && tgt) {
@@ -138,3 +136,5 @@ export async function computeLayout(
     height: laid.height ?? 600,
   };
 }
+
+export type { LayoutResult };
